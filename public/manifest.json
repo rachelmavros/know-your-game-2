@@ -1,0 +1,17 @@
+{
+  "name": "Know Your Game",
+  "short_name": "KYG",
+  "description": "Sports decoded for the casual fan",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F6F8",
+  "theme_color": "#C8102E",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
