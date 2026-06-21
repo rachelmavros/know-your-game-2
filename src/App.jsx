@@ -1028,6 +1028,117 @@ function CalendarTab({ alerts, onAlert }) {
 
 /* ─── ALERTS ──────────────────────────────────────────────── */
 
+/* ─── SAVE TO HOME SCREEN ─────────────────────────────────── */
+
+function detectPlatform() {
+  if (typeof navigator === "undefined") return "other";
+  const ua = navigator.userAgent || "";
+  const isIOS = /iPhone|iPad|iPod/.test(ua);
+  const isChrome = /CriOS|Chrome/.test(ua);
+  const isSafari = /Safari/.test(ua) && !isChrome;
+  const isAndroid = /Android/.test(ua);
+  if (isIOS && isChrome) return "ios-chrome";
+  if (isIOS && isSafari) return "ios-safari";
+  if (isIOS) return "ios-other";
+  if (isAndroid) return "android";
+  return "other";
+}
+
+const INSTALL_STEPS = {
+  "ios-safari": [
+    "Tap the Share icon (square with an upward arrow) in the toolbar",
+    "Scroll down and tap Add to Home Screen",
+    "Tap Add in the top-right corner",
+  ],
+  "ios-chrome": [
+    "Tap the Share icon to the right of the address bar",
+    "Scroll down and select Add to Home Screen",
+    "Tap Add in the top-right corner",
+  ],
+  "ios-other": [
+    "Open this site in Safari or Chrome for the best results",
+    "Tap the Share icon in the toolbar",
+    "Select Add to Home Screen",
+  ],
+  "android": [
+    "Tap the ⋮ menu in the top-right corner",
+    "Tap Add to Home Screen or Install app",
+    "Confirm by tapping Add or Install",
+  ],
+  "other": [
+    "Open this site on your phone in Safari or Chrome",
+    "Use the Share or Menu button in your browser",
+    "Look for Add to Home Screen or Install app",
+  ],
+};
+
+function InstallPrompt({ compact }) {
+  const [platform] = useState(detectPlatform);
+  const [open, setOpen] = useState(false);
+  const steps = INSTALL_STEPS[platform];
+
+  if (compact) {
+    return (
+      <div style={{
+        background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12,
+        padding: "16px 18px", marginTop: 24,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10, background: C.red, flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#fff", fontWeight: 900, fontSize: 17,
+          }}>K</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.ink }}>Get this on your home screen</div>
+            <div style={{ fontSize: 11, color: C.inkFaint }}>Opens full-screen like a real app — no App Store needed</div>
+          </div>
+          <button onClick={() => setOpen(!open)} style={{
+            background: C.redSoft, color: C.red, border: "none", borderRadius: 7,
+            padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+            flexShrink: 0,
+          }}>{open ? "Hide" : "Show me"}</button>
+        </div>
+        {open && (
+          <ol style={{ margin: "14px 0 0", paddingLeft: 20 }}>
+            {steps.map((s, i) => (
+              <li key={i} style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.7, marginBottom: 4 }}>{s}</li>
+            ))}
+          </ol>
+        )}
+      </div>
+    );
+  }
+
+  // Full version for the Alerts tab
+  return (
+    <div style={{
+      background: "linear-gradient(135deg, #15202B 0%, #243240 100%)",
+      borderRadius: 14, padding: "20px 20px 22px", marginBottom: 22, color: "#fff",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: 11, background: C.red, flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "#fff", fontWeight: 900, fontSize: 19,
+        }}>K</div>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 900 }}>Save to your home screen</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>Get one-tap access, full-screen, like a real app</div>
+        </div>
+      </div>
+      <ol style={{ margin: "0 0 4px", paddingLeft: 20 }}>
+        {steps.map((s, i) => (
+          <li key={i} style={{ fontSize: 13.5, color: "rgba(255,255,255,0.85)", lineHeight: 1.8, marginBottom: 2 }}>{s}</li>
+        ))}
+      </ol>
+      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 10 }}>
+        Detected: {platform.startsWith("ios") ? "iPhone/iPad" : platform === "android" ? "Android" : "your device"} — steps shown are for your browser.
+      </div>
+    </div>
+  );
+}
+
 function AlertsTab({ prefs, onPrefChange, gameAlerts, calAlerts }) {
   const rows = [
     { key: "mustWatch", label: "Championship & finals games", desc: "Clinchers and elimination games across all sports." },
@@ -1038,6 +1149,7 @@ function AlertsTab({ prefs, onPrefChange, gameAlerts, calAlerts }) {
   const total = gameAlerts.length + calAlerts.length;
   return (
     <div>
+      <InstallPrompt />
       <div style={{ background: C.redSoft, border: `1px solid ${C.red}`, borderRadius: 11, padding: "14px 16px", marginBottom: 22 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: C.red, marginBottom: 4 }}>
           {total} alert{total !== 1 ? "s" : ""} set
@@ -2082,6 +2194,8 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            <InstallPrompt compact />
           </>
         )}
         {tab === "calendar" && <CalendarTab alerts={calAlerts} onAlert={toggleCalAlert} />}
