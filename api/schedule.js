@@ -14,7 +14,10 @@
 const SPORTS = {
   wnba: { base: "https://api.balldontlie.io/wnba/v1/games", keyVar: "BDL_WNBA_KEY" },
   mlb:  { base: "https://api.balldontlie.io/mlb/v1/games",  keyVar: "BDL_MLB_KEY"  },
-  worldcup: { base: "https://api.balldontlie.io/fifa/v1/games", keyVar: "BDL_FIFA_KEY" },
+  // World Cup matches require the paid GOAT tier ($39.99/mo), so this is not
+  // fetched by the app today — World Cup games are hand-curated. URL kept
+  // correct here in case of a future upgrade. Note: path is /fifa/worldcup/.
+  worldcup: { base: "https://api.balldontlie.io/fifa/worldcup/v1/matches", keyVar: "BDL_FIFA_KEY" },
 };
 
 export default async function handler(req, res) {
