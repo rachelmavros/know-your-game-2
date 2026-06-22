@@ -1,8 +1,203 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 /* ─────────────────────────────────────────────────────────────
    KNOW YOUR GAME · light mode · ESPN-caliber sports companion
    ───────────────────────────────────────────────────────────── */
+
+/* ─── DATE HELPERS — dynamic "today", not hardcoded ─────────── */
+// All app data is dateKey'd as YYYY-MM-DD strings. These helpers
+// compute the real current date so "Today" always means today.
+
+function todayKey() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function addDays(dateKey, n) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + n);
+  const ny = date.getFullYear();
+  const nm = String(date.getMonth() + 1).padStart(2, "0");
+  const nd = String(date.getDate()).padStart(2, "0");
+  return `${ny}-${nm}-${nd}`;
+}
+
+function dayLabel(dateKey) {
+  const today = todayKey();
+  if (dateKey === today) return "Today";
+  if (dateKey === addDays(today, 1)) return "Tomorrow";
+  const [y, m, d] = dateKey.split("-").map(Number);
+  return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(y, m - 1, d).getDay()];
+}
+
+function weekdayShort(dateKey) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  return ["SUN","MON","TUE","WED","THU","FRI","SAT"][new Date(y, m - 1, d).getDay()];
+}
+
+function dayNum(dateKey) {
+  return parseInt(dateKey.split("-")[2], 10);
+}
+
+function monthName(dateKey) {
+  const [y, m] = dateKey.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "long" });
+}
+
+function daysInMonth(year, month) { // month is 1-indexed
+  return new Date(year, month, 0).getDate();
+}
+
+function firstWeekdayOfMonth(year, month) { // 0=Sun .. 6=Sat, returns Mon-first index
+  const jsDay = new Date(year, month - 1, 1).getDay(); // 0=Sun
+  return (jsDay + 6) % 7; // convert to Mon=0 .. Sun=6
+}
+
+/* ─── LIVE SCHEDULE (BallDontLie) ──────────────────────────────
+   Fetches real game schedules so the calendar is accurate whenever
+   you open the app — no manual updates needed. Falls back silently
+   to the built-in schedule if the API is unreachable or keys aren't
+   set yet, so the app always works.
+
+   Free tier = games endpoint only (no live scores needed here, just
+   the schedule). One free key per sport, set as Vercel env vars.
+   ──────────────────────────────────────────────────────────────── */
+
+// BallDontLie uses some abbreviations that differ from the app's.
+// Map BDL → app abbreviations so colors/logos stay consistent.
+const BDL_ABBR_FIX = {
+  // WNBA
+  "NY": "NYL", "LV": "LVA", "LA": "LAS", "WAS": "WAS", "GS": "GSV",
+  "CONN": "CON", "PHO": "PHX",
+  // (MLB and World Cup abbreviations mostly match already)
+};
+
+function fixAbbr(a) {
+  if (!a) return a;
+  return BDL_ABBR_FIX[a] || a;
+}
+
+// Convert a BallDontLie ISO-UTC datetime to { dateKey, time } in Central Time.
+function bdlToLocal(iso) {
+  const d = new Date(iso);
+  // dateKey in America/Chicago
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(d);
+  const get = t => parts.find(p => p.type === t)?.value;
+  const dateKey = `${get("year")}-${get("month")}-${get("day")}`;
+  const time = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago", hour: "numeric", minute: "2-digit", hour12: true,
+  }).format(d) + " CT";
+  return { dateKey, time };
+}
+
+// Map one BallDontLie game object → the app's lightweight calendar-event shape.
+function mapBdlGame(g, league) {
+  const home = g.home_team || {};
+  const visitor = g.visitor_team || {};
+  const { dateKey, time } = bdlToLocal(g.date);
+  return {
+    league,
+    home: home.full_name || home.name || "",
+    homeAbbr: fixAbbr(home.abbreviation),
+    away: visitor.full_name || visitor.name || "",
+    awayAbbr: fixAbbr(visitor.abbreviation),
+    time,
+    dateKey,
+    // The API doesn't rank importance, so default everything to a neutral
+    // "good game" verdict. Our curated GAMES/CAL_EVENTS still override the
+    // highlights; this just fills in the full slate so nothing's missing.
+    verdict: 3,
+    status: g.status,
+    homeScore: g.home_score,
+    awayScore: g.away_score,
+    note: "",
+    fromApi: true,
+  };
+}
+
+// Fetch a sport's schedule for a date window. Returns [] on any failure.
+async function fetchSchedule(sport, startDate, endDate) {
+  try {
+    const url = `/api/schedule?sport=${sport}&start_date=${startDate}&end_date=${endDate}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const json = await res.json();
+    return Array.isArray(json.data) ? json.data : [];
+  } catch {
+    return [];
+  }
+}
+
+// React hook: on mount, pull WNBA + MLB + World Cup schedules for a window
+// around today, group them by dateKey, and hand back a CAL_EVENTS-shaped map.
+// Components merge this over the built-in CAL_EVENTS so live data wins where
+// present but the app still works before keys are configured.
+function useLiveSchedule() {
+  const [liveEvents, setLiveEvents] = useState(null); // null = not loaded yet
+  const [status, setStatus] = useState("idle"); // idle | loading | done | empty
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      setStatus("loading");
+      const today = todayKey();
+      const start = addDays(today, -7);
+      const end = addDays(today, 21);
+
+      const [wnba, mlb, wc] = await Promise.all([
+        fetchSchedule("wnba", start, end),
+        fetchSchedule("mlb", start, end),
+        fetchSchedule("worldcup", start, end),
+      ]);
+
+      if (cancelled) return;
+
+      const grouped = {};
+      const add = (rows, league) => {
+        rows.forEach(g => {
+          const ev = mapBdlGame(g, league);
+          if (!ev.dateKey) return;
+          (grouped[ev.dateKey] = grouped[ev.dateKey] || []).push(ev);
+        });
+      };
+      add(wnba, "WNBA");
+      add(mlb, "MLB");
+      add(wc, "WC");
+
+      const total = wnba.length + mlb.length + wc.length;
+      setLiveEvents(grouped);
+      setStatus(total > 0 ? "done" : "empty");
+    };
+    run();
+    return () => { cancelled = true; };
+  }, []);
+
+  return { liveEvents, status };
+}
+
+// Merge live events into the built-in CAL_EVENTS for a given dateKey.
+// Curated events (with real verdicts/notes) come first; live API games
+// that aren't already represented get appended so the slate is complete.
+function mergeDayEvents(dateKey, liveEvents) {
+  const curated = CAL_EVENTS[dateKey] || [];
+  if (!liveEvents || !liveEvents[dateKey]) return curated;
+
+  const seen = new Set(curated.map(e => `${e.league}:${e.homeAbbr || e.home}:${e.awayAbbr || e.away}`));
+  const extras = liveEvents[dateKey].filter(e => {
+    const key = `${e.league}:${e.homeAbbr || e.home}:${e.awayAbbr || e.away}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return [...curated, ...extras];
+}
+
 
 const C = {
   bg:       "#F4F6F8",
@@ -26,8 +221,9 @@ const LEAGUE_COLORS = {
   NFL:  "#C0392B",   // red
   NHL:  "#0E7C9D",   // teal
   MLS:  "#6B4FBB",   // purple
+  WC:   "#0E8C5A",   // World Cup green
 };
-const LEAGUE_SPORT = { WNBA:"Basketball", NBA:"Basketball", MLB:"Baseball", NFL:"Football", NHL:"Hockey", MLS:"Soccer" };
+const LEAGUE_SPORT = { WNBA:"Basketball", NBA:"Basketball", MLB:"Baseball", NFL:"Football", NHL:"Hockey", MLS:"Soccer", WC:"Soccer · World Cup" };
 
 const VERDICT = {
   5: { label: "MUST WATCH",      bg: "#C8102E", text: "#fff" },
@@ -39,177 +235,207 @@ const VERDICT = {
 /* ─── DATA ────────────────────────────────────────────────── */
 
 const GAMES = [
+  // WNBA — real Sunday June 21 slate
   {
-    id: "wnba-ind-chi", league: "WNBA", city: "Indianapolis",
-    home: "Indiana Fever", homeAbbr: "IND", away: "Chicago Sky", awayAbbr: "CHI",
-    time: "6:00 PM CT", day: "Today", dateKey: "2026-06-11",
-    status: "upcoming", verdict: 5,
-    tagline: "🔥 Caitlin Clark vs. her rivals",
-    summary: "Clark draws the biggest crowds in the league, and the Sky are her fiercest rival. The marquee WNBA game of the week.",
-    channel: "Prime Video", channelUrl: "https://www.amazon.com/gp/video/sports",
-    watchAll: [
-      { name: "Prime Video", url: "https://www.amazon.com/gp/video/sports" },
-      { name: "Fubo", url: "https://www.fubo.tv" },
-      { name: "WNBA League Pass", url: "https://www.wnba.com/leaguepass" },
-    ],
+    id: "wnba-gsv-lva", league: "WNBA", city: "Las Vegas",
+    home: "Las Vegas Aces", homeAbbr: "LVA", away: "Golden State Valkyries", awayAbbr: "GSV",
+    time: "3:00 PM CT", day: "Today", dateKey: "2026-06-21",
+    status: "upcoming", verdict: 4, winProb: { LVA: 60.7, GSV: 39.3 },
+    tagline: "🏀 Aces host the league's newest team",
+    summary: "Las Vegas is favored at home, but the Valkyries have been a fun surprise in their second season. Good Sunday afternoon basketball.",
+    channel: "League Pass", channelUrl: "https://www.wnba.com/leaguepass",
     featured: true,
   },
   {
-    id: "wnba-sea-las", league: "WNBA", city: "Seattle",
-    home: "Seattle Storm", homeAbbr: "SEA", away: "LA Sparks", awayAbbr: "LAS",
-    time: "LIVE", day: "Today", dateKey: "2026-06-11",
-    status: "live", score: { SEA: 76, LAS: 81 }, clock: "Q4 · 2:43",
-    verdict: 4, tagline: "⏱️ Down to the wire",
-    summary: "Sparks lead by 5 with under 3 minutes left. Turn it on now.",
+    id: "wnba-min-was", league: "WNBA", city: "Minneapolis",
+    home: "Minnesota Lynx", homeAbbr: "MIN", away: "Washington Mystics", awayAbbr: "WAS",
+    time: "5:00 PM CT", day: "Today", dateKey: "2026-06-21",
+    status: "upcoming", verdict: 2, winProb: { MIN: 88.4, WAS: 11.6 },
+    tagline: "🏀 Lynx heavily favored at home",
+    summary: "Minnesota is one of the league's best teams this year. Washington is rebuilding — expect a lopsided one.",
+    channel: "League Pass", channelUrl: "https://www.wnba.com/leaguepass",
+  },
+  {
+    id: "wnba-las-nyl", league: "WNBA", city: "Los Angeles",
+    home: "Los Angeles Sparks", homeAbbr: "LAS", away: "New York Liberty", awayAbbr: "NYL",
+    time: "7:00 PM CT", day: "Today", dateKey: "2026-06-21",
+    status: "upcoming", verdict: 4, winProb: { LAS: 36.8, NYL: 63.2 },
+    tagline: "🏀 Liberty on the road out West",
+    summary: "NY Liberty are championship contenders with a deep, veteran roster — a good game to see what title-level WNBA looks like.",
     channel: "ESPN2", channelUrl: "https://www.espn.com/watch/",
   },
+  // FIFA World Cup 2026 — group stage, live tournament
   {
-    id: "nba-finals-g5", league: "NBA", city: "San Antonio",
-    home: "San Antonio Spurs", homeAbbr: "SAS", away: "New York Knicks", awayAbbr: "NYK",
-    time: "7:30 PM CT", day: "Saturday", dateKey: "2026-06-13",
-    status: "upcoming", verdict: 5, seriesLine: "Spurs lead 3–1",
-    tagline: "🏆 Spurs can clinch the title",
-    summary: "Win and San Antonio are NBA champions. The Knicks must win to survive. The best kind of game to watch live.",
-    channel: "ABC", channelUrl: "https://abc.com/watch-live",
-    channel2: "ESPN", channel2Url: "https://espn.com/watch",
-    watchAll: [
-      { name: "ABC", url: "https://abc.com/watch-live" },
-      { name: "ESPN", url: "https://espn.com/watch" },
-      { name: "ESPN+", url: "https://plus.espn.com" },
-      { name: "Fubo", url: "https://www.fubo.tv" },
-      { name: "Sling TV", url: "https://www.sling.com" },
-    ],
+    id: "wc-esp-ksa", league: "WC", city: "USA",
+    home: "Spain", homeAbbr: "ESP", away: "Saudi Arabia", awayAbbr: "KSA",
+    time: "11:00 AM CT", day: "Today", dateKey: "2026-06-21",
+    status: "upcoming", verdict: 4, winProb: { ESP: 89.4, KSA: 2.9 },
+    tagline: "⚽ World Cup group stage",
+    summary: "Spain is a heavy favorite and one of the tournament's best squads. Worth tuning in to see a contender in group play.",
+    channel: "Fox Sports", channelUrl: "https://www.foxsports.com/live",
   },
   {
-    id: "mlb-cws-lad", league: "MLB", city: "Chicago",
-    home: "Chicago White Sox", homeAbbr: "CWS", away: "Los Angeles Dodgers", awayAbbr: "LAD",
-    time: "6:40 PM CT", day: "Friday", dateKey: "2026-06-12",
+    id: "wc-bel-irn", league: "WC", city: "USA",
+    home: "Belgium", homeAbbr: "BEL", away: "Iran", awayAbbr: "IRN",
+    time: "2:00 PM CT", day: "Today", dateKey: "2026-06-21",
+    status: "upcoming", verdict: 5, winProb: { BEL: 67.6, IRN: 12.4 },
+    tagline: "⚽ World Cup — Belgium favored",
+    summary: "The World Cup is happening right now, live in the US, Mexico, and Canada. Belgium is a strong European side — a great entry point if you've never watched soccer.",
+    channel: "Fox Sports", channelUrl: "https://www.foxsports.com/live",
+  },
+  {
+    id: "wc-uru-cpv", league: "WC", city: "USA",
+    home: "Uruguay", homeAbbr: "URU", away: "Cape Verde", awayAbbr: "CPV",
+    time: "5:00 PM CT", day: "Today", dateKey: "2026-06-21",
+    status: "upcoming", verdict: 3, winProb: { URU: 65.8, CPV: 11.7 },
+    tagline: "⚽ Cape Verde's World Cup debut run",
+    summary: "Cape Verde is one of this World Cup's great underdog stories. Uruguay is favored, but a small nation chasing an upset is always fun to watch.",
+    channel: "Fox Sports", channelUrl: "https://www.foxsports.com/live",
+  },
+  // MLB — real Sunday June 21 slate
+  {
+    id: "mlb-lad-bal", league: "MLB", city: "Los Angeles",
+    home: "Los Angeles Dodgers", homeAbbr: "LAD", away: "Baltimore Orioles", awayAbbr: "BAL",
+    time: "3:10 PM CT", day: "Today", dateKey: "2026-06-21",
     status: "upcoming", verdict: 3,
-    tagline: "⚾ Ohtani comes to Chicago",
-    summary: "The Dodgers are baseball's biggest draw. Shohei Ohtani alone is worth tuning in for.",
+    tagline: "⚾ Dodgers at home — Ohtani watch",
+    summary: "The Dodgers are baseball's biggest draw, and Shohei Ohtani alone is worth tuning in for, win or lose.",
     channel: "Apple TV+", channelUrl: "https://tv.apple.com",
   },
   {
-    id: "wnba-atl-nyl", league: "WNBA", city: "Atlanta",
-    home: "Atlanta Dream", homeAbbr: "ATL", away: "New York Liberty", awayAbbr: "NYL",
-    time: "6:30 PM CT", day: "Today", dateKey: "2026-06-11",
-    status: "upcoming", verdict: 3,
-    tagline: "💪 Liberty are the team to beat",
-    summary: "NY Liberty are title contenders with a deep roster. High-level basketball worth a watch.",
-    channel: "ESPN2", channelUrl: "https://www.espn.com/watch/",
-  },
-  {
-    id: "mlb-col-chc", league: "MLB", city: "Denver",
-    home: "Colorado Rockies", homeAbbr: "COL", away: "Chicago Cubs", awayAbbr: "CHC",
-    time: "2:10 PM CT", day: "Today", dateKey: "2026-06-11",
+    id: "mlb-chc-tor", league: "MLB", city: "Chicago",
+    home: "Chicago Cubs", homeAbbr: "CHC", away: "Toronto Blue Jays", awayAbbr: "TOR",
+    time: "1:20 PM CT", day: "Today", dateKey: "2026-06-21",
     status: "upcoming", verdict: 2,
-    tagline: "☀️ Day baseball at altitude",
-    summary: "Coors Field's thin air makes for high scores. Fine for background baseball.",
+    tagline: "⚾ Cubs host the Blue Jays",
+    summary: "Regular-season interleague matchup at Wrigley. Low stakes, decent Sunday afternoon baseball.",
     channel: "Marquee", channelUrl: "https://www.marqueesportsnetwork.com",
-  },
-  {
-    id: "mlb-tor-nyy", league: "MLB", city: "Toronto",
-    home: "Toronto Blue Jays", homeAbbr: "TOR", away: "New York Yankees", awayAbbr: "NYY",
-    time: "6:37 PM CT", day: "Friday", dateKey: "2026-06-12",
-    status: "upcoming", verdict: 2,
-    tagline: "🥊 AL East rivalry, regular stakes",
-    summary: "Yankees–Jays matters more in September. Fine if you follow either team.",
-    channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv",
   },
 ];
 
-// All other games today/this week — the full slate, shown condensed in grey.
-// At scale this is where every game lives so nothing is missing after filtering.
+// NBA season has concluded — Knicks won the 2026 championship.
+const NBA_SEASON_RESULT = {
+  champion: "New York Knicks",
+  runnerUp: "San Antonio Spurs",
+  result: "Knicks won the Finals 4–1",
+  note: "The Knicks beat the Spurs in 5 games to win their first championship in over 50 years. The NBA season is now over — next season tips off in October.",
+};
+
+// All other games today — the full slate, shown condensed in grey.
 const OTHER_GAMES = [
-  { id: "o-wnba-dal-min", league: "WNBA", away: "Dallas Wings", home: "Minnesota Lynx", time: "7:00 PM CT", day: "Today", city: "Minneapolis", verdict: 2, channel: "ION", channelUrl: "https://www.watchion.tv", note: "Dallas is rebuilding around rookie Azzi Fudd. Lynx are a title contender." },
-  { id: "o-wnba-pho-gsv", league: "WNBA", away: "Phoenix Mercury", home: "Golden State Valkyries", time: "9:00 PM CT", day: "Today", city: "San Francisco", verdict: 2, channel: "League Pass", channelUrl: "https://www.wnba.com/leaguepass", note: "The Valkyries are the league's newest team, in just their second season." },
-  { id: "o-wnba-was-con", league: "WNBA", away: "Washington Mystics", home: "Connecticut Sun", time: "6:00 PM CT", day: "Today", city: "Uncasville", verdict: 2, channel: "League Pass", channelUrl: "https://www.wnba.com/leaguepass", note: "Two rebuilding East teams. One for diehards." },
-  { id: "o-wnba-tor-por", league: "WNBA", away: "Toronto Tempo", home: "Portland Fire", time: "10:00 PM CT", day: "Today", city: "Portland", verdict: 2, channel: "League Pass", channelUrl: "https://www.wnba.com/leaguepass", note: "Both expansion teams in their debut season — history in the making." },
-  { id: "o-mlb-sd-sf",   league: "MLB", away: "San Diego Padres", home: "San Francisco Giants", time: "8:45 PM CT", day: "Today", city: "San Francisco", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "NL West rivalry. Late-night West Coast baseball." },
-  { id: "o-mlb-nym-phi", league: "MLB", away: "NY Mets", home: "Philadelphia Phillies", time: "6:05 PM CT", day: "Today", city: "Philadelphia", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "NL East contenders. Matters more later in the summer." },
-  { id: "o-mlb-hou-sea", league: "MLB", away: "Houston Astros", home: "Seattle Mariners", time: "9:10 PM CT", day: "Today", city: "Seattle", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "AL West rivals. Astros are usually in the playoff hunt." },
-  { id: "o-mlb-atl-mia", league: "MLB", away: "Atlanta Braves", home: "Miami Marlins", time: "5:40 PM CT", day: "Today", city: "Miami", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "Braves are a perennial contender. Low-stakes June game." },
-  { id: "o-mlb-bos-bal", league: "MLB", away: "Boston Red Sox", home: "Baltimore Orioles", time: "6:05 PM CT", day: "Today", city: "Baltimore", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "AL East matchup between two storied franchises." },
-  { id: "o-mlb-tex-cle", league: "MLB", away: "Texas Rangers", home: "Cleveland Guardians", time: "6:10 PM CT", day: "Today", city: "Cleveland", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "Two recent playoff teams. Regular-season filler for now." },
+  { id: "o-mlb-nyy-cin", league: "MLB", away: "Cincinnati Reds", home: "New York Yankees", time: "12:35 PM CT", day: "Today", city: "New York", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "Sunday afternoon interleague matchup." },
+  { id: "o-mlb-atl-mil", league: "MLB", away: "Milwaukee Brewers", home: "Atlanta Braves", time: "12:35 PM CT", day: "Today", city: "Atlanta", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "NL contenders in a low-stakes June series finale." },
+  { id: "o-mlb-mia-sf", league: "MLB", away: "San Francisco Giants", home: "Miami Marlins", time: "12:40 PM CT", day: "Today", city: "Miami", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "NL series finale." },
+  { id: "o-mlb-tb-wsh", league: "MLB", away: "Washington Nationals", home: "Tampa Bay Rays", time: "12:40 PM CT", day: "Today", city: "Tampa", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "Interleague matchup." },
+  { id: "o-mlb-det-cws", league: "MLB", away: "Chicago White Sox", home: "Detroit Tigers", time: "12:40 PM CT", day: "Today", city: "Detroit", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "AL Central series finale." },
+  { id: "o-mlb-hou-cle", league: "MLB", away: "Cleveland Guardians", home: "Houston Astros", time: "1:10 PM CT", day: "Today", city: "Houston", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "AL series finale." },
+  { id: "o-mlb-kc-stl", league: "MLB", away: "St. Louis Cardinals", home: "Kansas City Royals", time: "1:10 PM CT", day: "Today", city: "Kansas City", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "I-70 rivalry series finale." },
+  { id: "o-mlb-tex-sd", league: "MLB", away: "San Diego Padres", home: "Texas Rangers", time: "1:35 PM CT", day: "Today", city: "Arlington", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "Interleague series finale." },
+  { id: "o-mlb-col-pit", league: "MLB", away: "Pittsburgh Pirates", home: "Colorado Rockies", time: "2:10 PM CT", day: "Today", city: "Denver", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "Coors Field — usually high-scoring." },
+  { id: "o-mlb-az-min", league: "MLB", away: "Minnesota Twins", home: "Arizona Diamondbacks", time: "2:15 PM CT", day: "Today", city: "Phoenix", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "Interleague series finale." },
+  { id: "o-mlb-ath-laa", league: "MLB", away: "LA Angels", home: "Athletics", time: "3:05 PM CT", day: "Today", city: "Sacramento", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "AL West series finale." },
+  { id: "o-mlb-sea-bos", league: "MLB", away: "Boston Red Sox", home: "Seattle Mariners", time: "3:10 PM CT", day: "Today", city: "Seattle", verdict: 2, channel: "MLB.tv", channelUrl: "https://www.mlb.com/tv", note: "Interleague series finale." },
+  { id: "o-mlb-phi-nym", league: "MLB", away: "New York Mets", home: "Philadelphia Phillies", time: "6:20 PM CT", day: "Today", city: "Philadelphia", verdict: 3, channel: "ESPN", channelUrl: "https://www.espn.com/watch/", note: "NL East rivalry on Sunday Night Baseball." },
 ];
 
 // Condensed full slate per calendar day — every other game so nothing's missing.
 const DAY_OTHER_GAMES = {
-  "2026-06-11": [
-    { league: "WNBA", away: "Dallas Wings", home: "Minnesota Lynx", time: "7:00 PM CT" },
-    { league: "WNBA", away: "Washington Mystics", home: "Connecticut Sun", time: "6:00 PM CT" },
-    { league: "WNBA", away: "Toronto Tempo", home: "Portland Fire", time: "10:00 PM CT" },
-    { league: "MLB", away: "Houston Astros", home: "Seattle Mariners", time: "9:10 PM CT" },
-    { league: "MLB", away: "Atlanta Braves", home: "Miami Marlins", time: "5:40 PM CT" },
-    { league: "MLB", away: "Boston Red Sox", home: "Baltimore Orioles", time: "6:05 PM CT" },
-    { league: "MLB", away: "Texas Rangers", home: "Cleveland Guardians", time: "6:10 PM CT" },
+  "2026-06-21": [
+    { league: "MLB", away: "Cincinnati Reds", home: "New York Yankees", time: "12:35 PM CT" },
+    { league: "MLB", away: "Milwaukee Brewers", home: "Atlanta Braves", time: "12:35 PM CT" },
+    { league: "MLB", away: "San Francisco Giants", home: "Miami Marlins", time: "12:40 PM CT" },
+    { league: "MLB", away: "Washington Nationals", home: "Tampa Bay Rays", time: "12:40 PM CT" },
+    { league: "MLB", away: "Chicago White Sox", home: "Detroit Tigers", time: "12:40 PM CT" },
+    { league: "MLB", away: "Cleveland Guardians", home: "Houston Astros", time: "1:10 PM CT" },
+    { league: "MLB", away: "St. Louis Cardinals", home: "Kansas City Royals", time: "1:10 PM CT" },
+    { league: "MLB", away: "San Diego Padres", home: "Texas Rangers", time: "1:35 PM CT" },
+    { league: "MLB", away: "Pittsburgh Pirates", home: "Colorado Rockies", time: "2:10 PM CT" },
+    { league: "MLB", away: "Minnesota Twins", home: "Arizona Diamondbacks", time: "2:15 PM CT" },
+    { league: "MLB", away: "LA Angels", home: "Athletics", time: "3:05 PM CT" },
+    { league: "MLB", away: "Boston Red Sox", home: "Seattle Mariners", time: "3:10 PM CT" },
   ],
-  "2026-06-12": [
-    { league: "MLB", away: "San Diego Padres", home: "San Francisco Giants", time: "8:45 PM CT" },
-    { league: "MLB", away: "NY Mets", home: "Philadelphia Phillies", time: "6:05 PM CT" },
-    { league: "WNBA", away: "Phoenix Mercury", home: "Las Vegas Aces", time: "9:00 PM CT" },
+  "2026-06-22": [
+    { league: "WNBA", away: "Chicago Sky", home: "Connecticut Sun", time: "6:00 PM CT" },
+    { league: "WNBA", away: "Toronto Tempo", home: "Atlanta Dream", time: "6:30 PM CT" },
+    { league: "MLB", away: "New York Yankees", home: "Detroit Tigers", time: "5:10 PM CT" },
+    { league: "MLB", away: "Texas Rangers", home: "Miami Marlins", time: "5:40 PM CT" },
   ],
-  "2026-06-13": [
-    { league: "MLB", away: "Chicago Cubs", home: "Colorado Rockies", time: "7:10 PM CT" },
-    { league: "WNBA", away: "Dallas Wings", home: "Golden State Valkyries", time: "9:30 PM CT" },
+  "2026-06-23": [
+    { league: "WC", away: "Algeria", home: "Jordan", time: "10:00 PM CT" },
+    { league: "MLB", away: "Houston Astros", home: "Toronto Blue Jays", time: "3:07 PM CT" },
+    { league: "MLB", away: "Seattle Mariners", home: "Pittsburgh Pirates", time: "5:40 PM CT" },
   ],
-  "2026-06-15": [
-    { league: "MLB", away: "NY Yankees", home: "Boston Red Sox", time: "6:05 PM CT" },
-    { league: "WNBA", away: "Atlanta Dream", home: "Washington Mystics", time: "2:00 PM CT" },
+  "2026-06-24": [
+    { league: "WNBA", away: "Phoenix Mercury", home: "Indiana Fever", time: "6:30 PM CT" },
+    { league: "WNBA", away: "Minnesota Lynx", home: "Washington Mystics", time: "6:30 PM CT" },
+  ],
+  "2026-06-25": [
+    { league: "WC", away: "Uzbekistan", home: "Portugal", time: "12:00 PM CT" },
+    { league: "WNBA", away: "Portland Fire", home: "Chicago Sky", time: "7:00 PM CT" },
   ],
 };
 
 const CAL_EVENTS = {
-  "2026-06-10": [
-    { league: "WNBA", away: "Phoenix Mercury", home: "Minnesota Lynx", time: "7:00 PM CT", verdict: 3, channel: "ION", note: "Two playoff hopefuls. Lynx are quietly one of the league's best." },
-  ],
-  "2026-06-11": [
-    { league: "WNBA", away: "Chicago Sky", home: "Indiana Fever", time: "6:00 PM CT", verdict: 5, channel: "Prime Video", note: "Caitlin Clark vs. her biggest rival. The week's marquee game." },
-    { league: "WNBA", away: "New York Liberty", home: "Atlanta Dream", time: "6:30 PM CT", verdict: 3, channel: "ESPN2", note: "Liberty are title contenders with a deep, veteran roster." },
-    { league: "MLB",  away: "Chicago Cubs", home: "Colorado Rockies", time: "2:10 PM CT", verdict: 2, channel: "Marquee", note: "Day baseball at altitude — expect a high-scoring game at Coors." },
-  ],
-  "2026-06-12": [
-    { league: "MLB", away: "Los Angeles Dodgers", home: "Chicago White Sox", time: "6:40 PM CT", verdict: 3, channel: "Apple TV+", note: "Shohei Ohtani comes to Chicago. Worth it just to watch him." },
-    { league: "MLB", away: "New York Yankees", home: "Toronto Blue Jays", time: "6:37 PM CT", verdict: 2, channel: "MLB.tv", note: "AL East rivalry, but stakes stay low until late summer." },
-  ],
-  "2026-06-13": [
-    { league: "NBA",  away: "New York Knicks", home: "San Antonio Spurs", time: "7:30 PM CT", verdict: 5, channel: "ABC", note: "🏆 Finals Game 5. Spurs lead 3–1 and can clinch the championship tonight." },
-    { league: "WNBA", away: "Las Vegas Aces", home: "Seattle Storm", time: "9:00 PM CT", verdict: 3, channel: "ION", note: "The Aces are perennial contenders — always a measuring-stick game." },
-  ],
-  "2026-06-14": [
-    { league: "MLB", away: "Boston Red Sox", home: "Houston Astros", time: "3:10 PM CT", verdict: 2, channel: "FOX", note: "Saturday afternoon baseball. Astros are usually in the mix." },
-  ],
-  "2026-06-15": [
-    { league: "WNBA", away: "Indiana Fever", home: "Connecticut Sun", time: "12:00 PM CT", verdict: 4, channel: "ABC", note: "Sunday national TV window — Clark on the road in a noon showcase." },
-    { league: "MLB",  away: "Chicago Cubs", home: "St. Louis Cardinals", time: "6:10 PM CT", verdict: 3, channel: "ESPN", note: "Cubs–Cardinals is baseball's oldest rivalry. Sunday Night Baseball." },
-  ],
   "2026-06-17": [
     { league: "WNBA", away: "Indiana Fever", home: "Las Vegas Aces", time: "9:00 PM CT", verdict: 4, channel: "ESPN", note: "Clark vs. the Aces' star core — a marquee national-TV matchup." },
   ],
+  "2026-06-18": [
+    { league: "WC",   away: "Canada", home: "Qatar", time: "5:00 PM CT", verdict: 2, channel: "Fox Sports", note: "World Cup group stage — host nation Canada in action." },
+    { league: "WNBA", away: "Atlanta Dream", home: "Indiana Fever", time: "6:30 PM CT", verdict: 4, channel: "ESPN", note: "Fever fall in a tight one — Clark and company on national TV." },
+  ],
+  "2026-06-19": [
+    { league: "WC",   away: "Australia", home: "USA", time: "2:00 PM CT", verdict: 5, channel: "Fox Sports", note: "USA opens at home in the World Cup — a huge national moment." },
+    { league: "WC",   away: "Morocco", home: "Scotland", time: "5:00 PM CT", verdict: 3, channel: "Fox Sports", note: "Group stage action." },
+    { league: "WNBA", away: "Toronto Tempo", home: "Connecticut Sun", time: "6:30 PM CT", verdict: 2, channel: "League Pass", note: "Two rebuilding teams." },
+    { league: "WNBA", away: "Washington Mystics", home: "New York Liberty", time: "6:30 PM CT", verdict: 3, channel: "ESPN2", note: "Liberty stay hot at home." },
+  ],
   "2026-06-20": [
-    { league: "MLB", away: "Milwaukee Brewers", home: "Chicago Cubs", time: "1:20 PM CT", verdict: 2, channel: "Marquee", note: "Cubs open a home stand at Wrigley. Division rival in town." },
+    { league: "WC",   away: "Sweden", home: "Netherlands", time: "12:00 PM CT", verdict: 3, channel: "Fox Sports", note: "Netherlands roll 5-1 in group play." },
+    { league: "WC",   away: "Ivory Coast", home: "Germany", time: "3:00 PM CT", verdict: 4, channel: "Fox Sports", note: "Germany survive a scare from Ivory Coast." },
+    { league: "WNBA", away: "Indiana Fever", home: "Atlanta Dream", time: "12:00 PM CT", verdict: 4, channel: "ABC", note: "Sunday national TV window — Fever on the road." },
+    { league: "WNBA", away: "Seattle Storm", home: "Phoenix Mercury", time: "2:00 PM CT", verdict: 2, channel: "League Pass", note: "Mercury handle Seattle at home." },
+    { league: "MLB",  away: "Chicago Sky", home: "Dallas Wings", time: "7:00 PM CT", verdict: 3, channel: "League Pass", note: "Tight one — Wings edge Chicago." },
+  ],
+  "2026-06-21": [
+    { league: "WNBA", away: "Golden State Valkyries", home: "Las Vegas Aces", time: "3:00 PM CT", verdict: 4, channel: "League Pass", note: "Aces host the WNBA's newest franchise — a fun Sunday matchup." },
+    { league: "WNBA", away: "Washington Mystics", home: "Minnesota Lynx", time: "5:00 PM CT", verdict: 2, channel: "League Pass", note: "Lynx are one of the league's best — expect a lopsided game." },
+    { league: "WNBA", away: "New York Liberty", home: "LA Sparks", time: "7:00 PM CT", verdict: 4, channel: "ESPN2", note: "Liberty on the road — championship-contender basketball." },
+    { league: "WC",   away: "Saudi Arabia", home: "Spain", time: "11:00 AM CT", verdict: 4, channel: "Fox Sports", note: "Spain is one of the tournament's strongest sides." },
+    { league: "WC",   away: "Iran", home: "Belgium", time: "2:00 PM CT", verdict: 5, channel: "Fox Sports", note: "World Cup group stage — Belgium favored, live now in the US." },
+    { league: "WC",   away: "Cape Verde", home: "Uruguay", time: "5:00 PM CT", verdict: 3, channel: "Fox Sports", note: "Cape Verde is this World Cup's great underdog story." },
   ],
   "2026-06-22": [
-    { league: "WNBA", away: "New York Liberty", home: "Chicago Sky", time: "7:00 PM CT", verdict: 5, channel: "Prime Video", note: "Top-5 matchup. Two of the East's best in a primetime slot." },
+    { league: "WC",   away: "Egypt", home: "New Zealand", time: "8:00 PM CT", verdict: 2, channel: "Fox Sports", note: "Group stage finale for both sides." },
+    { league: "WC",   away: "Austria", home: "Argentina", time: "12:00 PM CT", verdict: 4, channel: "Fox Sports", note: "Argentina, the defending champions, are in action." },
+    { league: "WC",   away: "Iraq", home: "France", time: "4:00 PM CT", verdict: 4, channel: "Fox Sports", note: "France are heavy favorites." },
+    { league: "WNBA", away: "Chicago Sky", home: "Connecticut Sun", time: "6:00 PM CT", verdict: 3, channel: "League Pass", note: "Two playoff-hopeful teams." },
+    { league: "WNBA", away: "Toronto Tempo", home: "Atlanta Dream", time: "6:30 PM CT", verdict: 3, channel: "League Pass", note: "Atlanta heavily favored at home." },
+  ],
+  "2026-06-23": [
+    { league: "WC",   away: "Senegal", home: "Norway", time: "7:00 PM CT", verdict: 3, channel: "Fox Sports", note: "Tight group stage matchup." },
+    { league: "WC",   away: "Algeria", home: "Jordan", time: "10:00 PM CT", verdict: 2, channel: "Fox Sports", note: "Algeria favored." },
+  ],
+  "2026-06-24": [
+    { league: "WC",   away: "Uzbekistan", home: "Portugal", time: "12:00 PM CT", verdict: 4, channel: "Fox Sports", note: "Portugal — one of the tournament favorites." },
+    { league: "WNBA", away: "Phoenix Mercury", home: "Indiana Fever", time: "6:30 PM CT", verdict: 4, channel: "ESPN", note: "Clark and the Fever back on national TV." },
   ],
   "2026-06-25": [
-    { league: "NBA", away: "", home: "", time: "7:00 PM CT", verdict: 3, channel: "ABC", title: "NBA Draft", note: "NBA Draft night. Watch to see who your team picks for next season." },
-  ],
-  "2026-06-28": [
+    { league: "WC",   away: "Ghana", home: "England", time: "3:00 PM CT", verdict: 4, channel: "Fox Sports", note: "England is one of the tournament's top contenders." },
     { league: "WNBA", away: "New York Liberty", home: "Indiana Fever", time: "5:00 PM CT", verdict: 5, channel: "ESPN", note: "Fever–Liberty rivalry game. Clark vs. the defending East powers." },
   ],
 };
 
 // Season-context used by the AI rundown and the Sports 101 tab
 const SEASON_CONTEXT = {
-  WNBA: { phase: "Regular Season", pct: 22, detail: "Early season — 44-game schedule running May through September. Playoffs (8 teams) begin mid-September." },
-  NBA:  { phase: "Finals", pct: 97, detail: "The Finals are nearly over. Spurs lead the best-of-7 series 3–1 and can win the title in Game 5." },
-  MLB:  { phase: "Regular Season", pct: 41, detail: "Mid-season of a 162-game grind. Standings tighten in August; playoffs start in October." },
+  WNBA: { phase: "Regular Season", pct: 32, detail: "Mid-season — 44-game schedule running May through September. Playoffs (8 teams) begin mid-September." },
+  NBA:  { phase: "Off-season", pct: 0, detail: "The Knicks won the 2026 championship, beating the Spurs 4–1. The season is over — next season tips off in October." },
+  MLB:  { phase: "Regular Season", pct: 44, detail: "Mid-season of a 162-game grind. Standings tighten in August; playoffs start in October." },
   NFL:  { phase: "Off-season", pct: 0, detail: "Nothing live yet. Preseason starts in August, regular season September 10." },
+  WC:   { phase: "Group Stage", pct: 25, detail: "The 2026 World Cup is underway across the US, Mexico, and Canada — 48 teams competing. Knockout rounds begin in early July." },
 };
 
 // Sport emoji per league — used on headlines everywhere
-const SPORT_EMOJI = { WNBA: "🏀", NBA: "🏀", MLB: "⚾", NFL: "🏈", NHL: "🏒", MLS: "⚽" };
+const SPORT_EMOJI = { WNBA: "🏀", NBA: "🏀", MLB: "⚾", NFL: "🏈", NHL: "🏒", MLS: "⚽", WC: "⚽" };
 
 // Team color accents for logo badges (monogram discs). Keyed by full team name.
 const TEAM_COLORS = {
@@ -252,9 +478,9 @@ const NBA_BRACKET = {
       ],
     },
     {
-      name: "NBA Finals",
+      name: "NBA Finals — Final",
       series: [
-        { conf: "Championship", teamA: "San Antonio Spurs", teamB: "New York Knicks", scoreA: 3, scoreB: 1, winner: null, done: false, live: true },
+        { conf: "Championship", teamA: "New York Knicks", teamB: "San Antonio Spurs", scoreA: 4, scoreB: 1, winner: "A", done: true },
       ],
     },
   ],
@@ -286,8 +512,8 @@ const STANDINGS = {
     ],
   },
   NBA: {
-    emoji: "🏀", label: "NBA Playoffs", bracket: true,
-    blurb: "The NBA is at its Finals. Here's the bracket showing the road to the title — each series is best-of-7, first to 4 wins.",
+    emoji: "🏀", label: "NBA — Season Complete", bracket: true,
+    blurb: "The 2026 NBA season has ended. Here's the road to the title — each playoff series was best-of-7, first to 4 wins. Next season begins in October.",
   },
   MLB: {
     emoji: "⚾", label: "MLB Standings", playoffCut: 6, splitLabel: true,
@@ -342,6 +568,11 @@ const STANDINGS = {
       { rank: 14, team: "DC United",         conf: "E", pts: 13, played: 18 },
       { rank: 15, team: "New England Revolution", conf: "E", pts: 11, played: 17 },
     ],
+  },
+  WC: {
+    emoji: "⚽", label: "World Cup — Group Stage", status: "Group Stage",
+    blurb: "The 2026 FIFA World Cup is happening right now, hosted across the US, Mexico, and Canada — 48 teams in 12 groups. Win the group (or finish well) and advance to the knockout rounds.",
+    next: "Knockout rounds begin in early July",
   },
 };
 
@@ -787,39 +1018,50 @@ function GameCard({ game, alertOn, onAlert }) {
 
 /* ─── CALENDAR ────────────────────────────────────────────── */
 
-const MONTH_DAYS = (() => {
-  // June 2026: starts Monday. 30 days.
-  const days = [];
-  const firstWeekday = 1; // Mon=1 (Sun=0)
-  for (let i = 0; i < firstWeekday; i++) days.push(null);
-  for (let d = 1; d <= 30; d++) days.push(d);
-  return days;
-})();
-
 function CalendarTab({ alerts, onAlert }) {
   const [view, setView] = useState("month");
-  const [selected, setSelected] = useState("2026-06-11");
+  const today = todayKey();
+  const [cursorMonth, setCursorMonth] = useState(() => today.slice(0, 7)); // "YYYY-MM", for month navigation
+  const [selected, setSelected] = useState(today);
   const [calFilters, setCalFilters] = useState({ sport: "ALL" });
 
-  const key = d => `2026-06-${String(d).padStart(2, "0")}`;
+  const [cy, cm] = cursorMonth.split("-").map(Number);
+  const monthDays = (() => {
+    const days = [];
+    const lead = firstWeekdayOfMonth(cy, cm);
+    for (let i = 0; i < lead; i++) days.push(null);
+    const total = daysInMonth(cy, cm);
+    for (let d = 1; d <= total; d++) days.push(`${cy}-${String(cm).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
+    return days;
+  })();
 
   // Filter calendar events by sport
   const filterEvents = evs => calFilters.sport === "ALL" ? evs : evs.filter(e => e.league === calFilters.sport);
 
-  const dayEvents = filterEvents(selected ? (CAL_EVENTS[selected] || []) : []);
-  const selDayNum = selected ? parseInt(selected.split("-")[2], 10) : null;
+  // Live schedule merged over curated highlights
+  const { liveEvents, status: liveStatus } = useLiveSchedule();
+  const eventsFor = k => mergeDayEvents(k, liveEvents);
 
-  const topVerdict = d => {
-    const evs = filterEvents(CAL_EVENTS[key(d)] || []);
+  const dayEvents = filterEvents(selected ? eventsFor(selected) : []);
+  const selDayNum = selected ? dayNum(selected) : null;
+
+  const topVerdict = k => {
+    const evs = filterEvents(eventsFor(k));
     return evs.reduce((m, e) => Math.max(m, e.verdict), 0);
   };
   const dotColor = v => v >= 5 ? C.red : v === 4 ? "#E8590C" : v === 3 ? "#1D5BBF" : "#C2CAD2";
 
   return (
     <div>
+      {liveStatus === "done" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#21A35A", display: "inline-block" }} />
+          Live schedule connected
+        </div>
+      )}
       {/* Sport filter pills */}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, paddingBottom: 2 }}>
-        {["ALL", "WNBA", "NBA", "MLB", "NFL", "NHL", "MLS"].map(lg => (
+        {["ALL", "WNBA", "NBA", "MLB", "WC", "NFL", "NHL", "MLS"].map(lg => (
           <button key={lg} onClick={() => setCalFilters(f => ({ ...f, sport: lg }))} style={{
             flexShrink: 0, padding: "6px 13px", borderRadius: 16, cursor: "pointer",
             background: calFilters.sport === lg ? (LEAGUE_COLORS[lg] || C.red) : C.surface,
@@ -845,9 +1087,31 @@ function CalendarTab({ alerts, onAlert }) {
 
       {view === "month" && (
         <>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 14 }}>
-            <span style={{ fontSize: 22, fontWeight: 900, color: C.ink, letterSpacing: "-0.01em" }}>June</span>
-            <span style={{ fontSize: 15, color: C.inkFaint, fontWeight: 600 }}>2026</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <button onClick={() => {
+              const prevMonth = addDays(`${cursorMonth}-01`, -1).slice(0, 7);
+              setCursorMonth(prevMonth);
+            }} style={{
+              background: C.surface, border: `1px solid ${C.line}`, borderRadius: 8,
+              width: 30, height: 30, cursor: "pointer", fontSize: 14, color: C.inkMid, fontFamily: "inherit",
+            }}>‹</button>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flex: 1 }}>
+              <span style={{ fontSize: 22, fontWeight: 900, color: C.ink, letterSpacing: "-0.01em" }}>{monthName(`${cursorMonth}-01`)}</span>
+              <span style={{ fontSize: 15, color: C.inkFaint, fontWeight: 600 }}>{cy}</span>
+            </div>
+            <button onClick={() => {
+              const nextMonth = addDays(`${cursorMonth}-01`, 32).slice(0, 7);
+              setCursorMonth(nextMonth);
+            }} style={{
+              background: C.surface, border: `1px solid ${C.line}`, borderRadius: 8,
+              width: 30, height: 30, cursor: "pointer", fontSize: 14, color: C.inkMid, fontFamily: "inherit",
+            }}>›</button>
+            {cursorMonth !== today.slice(0,7) && (
+              <button onClick={() => { setCursorMonth(today.slice(0,7)); setSelected(today); }} style={{
+                background: C.redSoft, border: `1px solid ${C.red}`, borderRadius: 8,
+                padding: "6px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700, color: C.red, fontFamily: "inherit",
+              }}>Today</button>
+            )}
           </div>
 
           {/* weekday header */}
@@ -859,13 +1123,13 @@ function CalendarTab({ alerts, onAlert }) {
 
           {/* month grid */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 22 }}>
-            {MONTH_DAYS.map((d, i) => {
-              if (d === null) return <div key={i} />;
-              const k = key(d);
-              const v = topVerdict(d);
-              const hasEvents = (CAL_EVENTS[k] || []).length > 0;
-              const isSelected = selDayNum === d;
-              const isToday = d === 11;
+            {monthDays.map((k, i) => {
+              if (k === null) return <div key={i} />;
+              const d = dayNum(k);
+              const dayEvs = eventsFor(k);
+              const hasEvents = dayEvs.length > 0;
+              const isSelected = selected === k;
+              const isToday = k === today;
               return (
                 <button key={i} onClick={() => setSelected(k)} disabled={!hasEvents} style={{
                   aspectRatio: "1", border: `1px solid ${isSelected ? C.ink : isToday ? C.red : C.line}`,
@@ -882,7 +1146,7 @@ function CalendarTab({ alerts, onAlert }) {
                   }}>{d}</span>
                   {hasEvents && (
                     <div style={{ display: "flex", gap: 2 }}>
-                      {(CAL_EVENTS[k] || []).slice(0, 3).map((e, j) => (
+                      {dayEvs.slice(0, 3).map((e, j) => (
                         <span key={j} style={{
                           width: 5, height: 5, borderRadius: "50%",
                           background: isSelected ? "#fff" : dotColor(e.verdict),
@@ -899,22 +1163,20 @@ function CalendarTab({ alerts, onAlert }) {
 
       {view === "week" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 5, marginBottom: 22 }}>
-          {[9,10,11,12,13,14,15].map(d => {
-            const k = key(d);
-            const evs = CAL_EVENTS[k] || [];
-            const isToday = d === 11;
-            const isSelected = selDayNum === d;
-            const wd = ["MON","TUE","WED","THU","FRI","SAT","SUN"][[9,10,11,12,13,14,15].indexOf(d)];
+          {Array.from({ length: 7 }, (_, i) => addDays(today, i - 3)).map(k => {
+            const evs = filterEvents(eventsFor(k));
+            const isToday = k === today;
+            const isSelected = selected === k;
             return (
-              <button key={d} onClick={() => setSelected(k)} style={{
+              <button key={k} onClick={() => setSelected(k)} style={{
                 border: `1px solid ${isSelected ? C.ink : isToday ? C.red : C.line}`,
                 borderWidth: isSelected ? 2 : 1,
                 borderRadius: 10, cursor: "pointer", padding: "10px 4px",
                 background: isSelected ? C.ink : C.surface, fontFamily: "inherit",
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
               }}>
-                <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.05em", color: isSelected ? "rgba(255,255,255,0.7)" : C.inkFaint }}>{wd}</span>
-                <span style={{ fontSize: 15, fontWeight: 800, color: isSelected ? "#fff" : isToday ? C.red : C.ink }}>{d}</span>
+                <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.05em", color: isSelected ? "rgba(255,255,255,0.7)" : C.inkFaint }}>{weekdayShort(k)}</span>
+                <span style={{ fontSize: 15, fontWeight: 800, color: isSelected ? "#fff" : isToday ? C.red : C.ink }}>{dayNum(k)}</span>
                 <div style={{ display: "flex", gap: 2, minHeight: 6 }}>
                   {evs.slice(0,3).map((e,j) => (
                     <span key={j} style={{ width: 5, height: 5, borderRadius: "50%", background: isSelected ? "#fff" : dotColor(e.verdict) }} />
@@ -929,7 +1191,7 @@ function CalendarTab({ alerts, onAlert }) {
       {/* selected day detail */}
       <div>
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", color: C.inkFaint, marginBottom: 12 }}>
-          {selDayNum === 11 ? "● TODAY" : "GAMES"} · JUNE {selDayNum}
+          {selected === today ? "● TODAY" : "GAMES"} · {monthName(selected).toUpperCase()} {selDayNum}
         </div>
         {dayEvents.length === 0 ? (
           <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 24, textAlign: "center", color: C.inkDim, fontSize: 14 }}>
@@ -991,7 +1253,7 @@ function CalendarTab({ alerts, onAlert }) {
           return (
             <div style={{ marginTop: 16 }}>
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 8 }}>
-                EVERYTHING ELSE ON JUNE {selDayNum}
+                EVERYTHING ELSE ON {monthName(selected).toUpperCase()} {selDayNum}
               </div>
               <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
                 {others.map((g, i) => (
@@ -1029,6 +1291,93 @@ function CalendarTab({ alerts, onAlert }) {
 /* ─── ALERTS ──────────────────────────────────────────────── */
 
 /* ─── SAVE TO HOME SCREEN ─────────────────────────────────── */
+
+/* ─── UPDATE CHECKER ──────────────────────────────────────── */
+// Registers a no-op service worker (needed for some browsers' update
+// lifecycle) and polls /version.json periodically. If the deployed
+// version differs from the one loaded at app start, shows a banner
+// prompting the user to refresh.
+
+const CURRENT_VERSION_KEY = "kyg-app-version";
+
+function registerServiceWorker() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("/sw.js").catch(() => {
+    // Fails silently — update banner still works via polling even without SW
+  });
+}
+
+function useUpdateChecker(intervalMs = 5 * 60 * 1000) {
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const initialVersion = useRef(null);
+
+  useEffect(() => {
+    registerServiceWorker();
+
+    let cancelled = false;
+
+    const checkVersion = async () => {
+      try {
+        const res = await fetch(`/version.json?t=${Date.now()}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+
+        if (initialVersion.current === null) {
+          initialVersion.current = data.version;
+          return;
+        }
+        if (data.version !== initialVersion.current) {
+          setUpdateAvailable(true);
+        }
+      } catch {
+        // Network hiccup — ignore, try again next interval
+      }
+    };
+
+    checkVersion();
+    const id = setInterval(checkVersion, intervalMs);
+
+    // Also check whenever the tab becomes visible again —
+    // catches the common case of someone reopening the home-screen app
+    const onVisible = () => { if (!document.hidden) checkVersion(); };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [intervalMs]);
+
+  return updateAvailable;
+}
+
+function UpdateBanner({ visible, onRefresh, onDismiss }) {
+  if (!visible) return null;
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, zIndex: 500,
+      background: "#15202B", color: "#fff",
+      padding: "11px 18px", display: "flex", alignItems: "center", gap: 12,
+      boxShadow: "0 2px 12px rgba(0,0,0,0.25)",
+    }}>
+      <span style={{ fontSize: 16, flexShrink: 0 }}>✦</span>
+      <div style={{ flex: 1, fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>
+        A new version of Know Your Game is ready.
+      </div>
+      <button onClick={onRefresh} style={{
+        background: C.red, color: "#fff", border: "none", borderRadius: 7,
+        padding: "8px 16px", fontSize: 12.5, fontWeight: 800, cursor: "pointer",
+        fontFamily: "inherit", flexShrink: 0, whiteSpace: "nowrap",
+      }}>Refresh now</button>
+      <button onClick={onDismiss} style={{
+        background: "none", border: "none", color: "rgba(255,255,255,0.5)",
+        fontSize: 18, cursor: "pointer", padding: "0 2px", flexShrink: 0, lineHeight: 1,
+      }}>×</button>
+    </div>
+  );
+}
 
 function detectPlatform() {
   if (typeof navigator === "undefined") return "other";
@@ -1305,16 +1654,14 @@ function WeekRundown() {
   const [state, setState] = useState("idle"); // idle | loading | done | error
   const [text, setText] = useState("");
 
-  // The week's notable games — used both for the prompt and the bullet list
-  const week = ["2026-06-11","2026-06-12","2026-06-13","2026-06-14","2026-06-15","2026-06-17"]
+  // The next 7 days' notable games — used both for the prompt and the bullet list
+  const today = todayKey();
+  const week = Array.from({ length: 7 }, (_, i) => addDays(today, i))
     .flatMap(d => (CAL_EVENTS[d] || []).map(e => ({ d, ...e })))
     .filter(e => e.verdict >= 3)
     .sort((a, b) => b.verdict - a.verdict || a.d.localeCompare(b.d));
 
-  const dayName = iso => {
-    const [y, m, dd] = iso.split("-").map(Number);
-    return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(y, m - 1, dd).getDay()];
-  };
+  const dayName = iso => dayLabel(iso);
 
   const generate = async () => {
     setState("loading");
@@ -1657,7 +2004,7 @@ function SeriesBox({ s }) {
 }
 
 function StandingsTab() {
-  const leagues = ["WNBA", "NBA", "MLB", "MLS", "NFL", "NHL"];
+  const leagues = ["WNBA", "NBA", "MLB", "WC", "MLS", "NFL", "NHL"];
   const [view, setView] = useState("WNBA");
   const lc = LEAGUE_COLORS[view];
   const s = STANDINGS[view];
@@ -1759,9 +2106,9 @@ function StandingsTab() {
             </div>
           ))}
           <div style={{ background: "#15202B", borderRadius: 12, padding: "16px 18px", color: "#fff" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>🏆 What's at stake</div>
+            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>🏆 2026 NBA Champions</div>
             <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.6, margin: 0 }}>
-              The Spurs lead 3–1 — one more win and San Antonio are champions. The Knicks must win three straight to take the title. Game 5 is Saturday.
+              The New York Knicks beat the San Antonio Spurs 4–1 to win the championship — their first title in over 50 years. The season is now over; next season tips off in October.
             </p>
           </div>
         </>
@@ -2055,6 +2402,8 @@ export default function App() {
   const [user, setUser] = useState(() => load("kyg-user", null));
   const [showLogin, setShowLogin] = useState(false);
   const [toast, setToast] = useState(null);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+  const updateAvailable = useUpdateChecker();
 
   const flash = m => { setToast(m); setTimeout(() => setToast(null), 2300); };
   const prefChange = (k, v) => setPrefs(p => { const n = { ...p, [k]: v }; save("kyg-prefs-v3", n); return n; });
@@ -2108,6 +2457,12 @@ export default function App() {
         ::-webkit-scrollbar { height: 0; }
         @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
       `}</style>
+
+      <UpdateBanner
+        visible={updateAvailable && !updateDismissed}
+        onRefresh={() => window.location.reload()}
+        onDismiss={() => setUpdateDismissed(true)}
+      />
 
       <header style={{ background: C.red, position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 10px rgba(200,16,46,0.2)" }}>
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 18px" }}>
