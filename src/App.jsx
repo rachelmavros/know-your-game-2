@@ -539,6 +539,7 @@ const SPORT_101_LINKS = {
   NBA:  { label: "NBA.com — playoffs hub", url: "https://www.nba.com/playoffs" },
   MLB:  { label: "MLB.com — standings & schedule", url: "https://www.mlb.com" },
   NFL:  { label: "NFL.com — official site", url: "https://www.nfl.com" },
+  WC:   { label: "FIFA.com — World Cup hub", url: "https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026" },
 };
 
 // NBA Finals bracket — the road to the 2026 title
@@ -645,9 +646,87 @@ const STANDINGS = {
   },
   WC: {
     emoji: "⚽", label: "World Cup — Group Stage", status: "Group Stage",
-    blurb: "The 2026 FIFA World Cup is happening right now, hosted across the US, Mexico, and Canada — 48 teams in 12 groups. Win the group (or finish well) and advance to the knockout rounds.",
+    blurb: "The 2026 FIFA World Cup is happening right now, hosted across the US, Mexico, and Canada — 48 teams in 12 groups. The top two from each group, plus the eight best third-place teams, advance to the knockout rounds.",
     next: "Knockout rounds begin in early July",
+    groups: true,
   },
+};
+
+// Full World Cup group standings (snapshot — refresh during the tournament).
+// W/D/L and points per team. Top 2 of each group + best 8 third-place advance.
+const WC_GROUPS = {
+  A: [
+    { team: "Mexico", abbr: "MEX", w: 2, d: 0, l: 0, pts: 6 },
+    { team: "South Korea", abbr: "KOR", w: 1, d: 0, l: 1, pts: 3 },
+    { team: "Czechia", abbr: "CZE", w: 0, d: 1, l: 1, pts: 1 },
+    { team: "South Africa", abbr: "RSA", w: 0, d: 1, l: 1, pts: 1 },
+  ],
+  B: [
+    { team: "Canada", abbr: "CAN", w: 1, d: 1, l: 0, pts: 4 },
+    { team: "Switzerland", abbr: "SUI", w: 1, d: 1, l: 0, pts: 4 },
+    { team: "Bosnia & Herz.", abbr: "BIH", w: 0, d: 1, l: 1, pts: 1 },
+    { team: "Qatar", abbr: "QAT", w: 0, d: 1, l: 1, pts: 1 },
+  ],
+  C: [
+    { team: "Brazil", abbr: "BRA", w: 1, d: 1, l: 0, pts: 4 },
+    { team: "Morocco", abbr: "MAR", w: 1, d: 1, l: 0, pts: 4 },
+    { team: "Scotland", abbr: "SCO", w: 1, d: 0, l: 1, pts: 3 },
+    { team: "Haiti", abbr: "HTI", w: 0, d: 0, l: 2, pts: 0 },
+  ],
+  D: [
+    { team: "USA", abbr: "USA", w: 2, d: 0, l: 0, pts: 6 },
+    { team: "Australia", abbr: "AUS", w: 1, d: 0, l: 1, pts: 3 },
+    { team: "Paraguay", abbr: "PAR", w: 1, d: 0, l: 1, pts: 3 },
+    { team: "Türkiye", abbr: "TUR", w: 0, d: 0, l: 2, pts: 0 },
+  ],
+  E: [
+    { team: "Germany", abbr: "GER", w: 2, d: 0, l: 0, pts: 6 },
+    { team: "Ivory Coast", abbr: "CIV", w: 1, d: 0, l: 1, pts: 3 },
+    { team: "Ecuador", abbr: "ECU", w: 0, d: 1, l: 1, pts: 1 },
+    { team: "Curaçao", abbr: "CUW", w: 0, d: 1, l: 1, pts: 1 },
+  ],
+  F: [
+    { team: "Netherlands", abbr: "NED", w: 1, d: 1, l: 0, pts: 4 },
+    { team: "Japan", abbr: "JPN", w: 1, d: 1, l: 0, pts: 4 },
+    { team: "Sweden", abbr: "SWE", w: 1, d: 0, l: 1, pts: 3 },
+    { team: "Tunisia", abbr: "TUN", w: 0, d: 0, l: 2, pts: 0 },
+  ],
+  G: [
+    { team: "Egypt", abbr: "EGY", w: 1, d: 1, l: 0, pts: 4 },
+    { team: "Iran", abbr: "IRN", w: 0, d: 2, l: 0, pts: 2 },
+    { team: "Belgium", abbr: "BEL", w: 0, d: 2, l: 0, pts: 2 },
+    { team: "New Zealand", abbr: "NZL", w: 0, d: 1, l: 1, pts: 1 },
+  ],
+  H: [
+    { team: "Spain", abbr: "ESP", w: 1, d: 1, l: 0, pts: 4 },
+    { team: "Uruguay", abbr: "URU", w: 0, d: 2, l: 0, pts: 2 },
+    { team: "Cape Verde", abbr: "CPV", w: 0, d: 2, l: 0, pts: 2 },
+    { team: "Saudi Arabia", abbr: "KSA", w: 0, d: 1, l: 1, pts: 1 },
+  ],
+  I: [
+    { team: "Norway", abbr: "NOR", w: 1, d: 0, l: 0, pts: 3 },
+    { team: "France", abbr: "FRA", w: 1, d: 0, l: 0, pts: 3 },
+    { team: "Senegal", abbr: "SEN", w: 0, d: 0, l: 1, pts: 0 },
+    { team: "Iraq", abbr: "IRQ", w: 0, d: 0, l: 1, pts: 0 },
+  ],
+  J: [
+    { team: "Argentina", abbr: "ARG", w: 2, d: 0, l: 0, pts: 6 },
+    { team: "Austria", abbr: "AUT", w: 1, d: 0, l: 1, pts: 3 },
+    { team: "Jordan", abbr: "JOR", w: 0, d: 0, l: 1, pts: 0 },
+    { team: "Algeria", abbr: "DZA", w: 0, d: 0, l: 1, pts: 0 },
+  ],
+  K: [
+    { team: "Colombia", abbr: "COL", w: 1, d: 0, l: 0, pts: 3 },
+    { team: "DR Congo", abbr: "COD", w: 0, d: 1, l: 0, pts: 1 },
+    { team: "Portugal", abbr: "POR", w: 0, d: 1, l: 0, pts: 1 },
+    { team: "Uzbekistan", abbr: "UZB", w: 0, d: 0, l: 1, pts: 0 },
+  ],
+  L: [
+    { team: "England", abbr: "ENG", w: 1, d: 0, l: 0, pts: 3 },
+    { team: "Ghana", abbr: "GHA", w: 1, d: 0, l: 0, pts: 3 },
+    { team: "Panama", abbr: "PAN", w: 0, d: 0, l: 1, pts: 0 },
+    { team: "Croatia", abbr: "CRO", w: 0, d: 0, l: 1, pts: 0 },
+  ],
 };
 
 // Players per league. Each league has a coach list, marquee "stars" (with deep info),
@@ -771,6 +850,51 @@ const PLAYERS = {
     coaches: [
       { name: "Andy Reid", team: "Kansas City Chiefs", role: "Head Coach" },
       { name: "Ben Johnson", team: "Chicago Bears", role: "Head Coach" },
+    ],
+  },
+  WC: {
+    stars: [
+      { name: "Lionel Messi", team: "Argentina", pos: "Forward", debut: 2006, note: "The defending champion's captain and arguably the greatest player ever, likely playing in his final World Cup. Still the heartbeat of Argentina's attack.",
+        stats: [["World Cups", "6"], ["WC Goals", "16"], ["Titles", "1 (2022)"]],
+        facts: ["Led Argentina to the 2022 World Cup title.", "All-time leading scorer in World Cup history.", "Multiple-time world player of the year."],
+        link: "https://en.wikipedia.org/wiki/Lionel_Messi" },
+      { name: "Kylian Mbappé", team: "France", pos: "Forward", debut: 2018, note: "France's superstar and one of the fastest, most lethal forwards on the planet. A World Cup winner who scored a hat-trick in the 2022 final.",
+        stats: [["WC Goals", "12"], ["Titles", "1 (2018)"], ["Age", "27"]],
+        facts: ["World Cup winner with France in 2018.", "Scored a hat-trick in the 2022 final.", "Among the most expensive and marketable players in the world."],
+        link: "https://en.wikipedia.org/wiki/Kylian_Mbapp%C3%A9" },
+      { name: "Cristiano Ronaldo", team: "Portugal", pos: "Forward", debut: 2006, note: "One of the greatest goalscorers in history, chasing an elusive World Cup in what is almost certainly his final tournament.",
+        stats: [["World Cups", "6"], ["Career Goals", "900+"], ["Age", "41"]],
+        facts: ["All-time leading scorer in men's international football.", "Five-time world player of the year.", "Has played in a record number of World Cups."],
+        link: "https://en.wikipedia.org/wiki/Cristiano_Ronaldo" },
+      { name: "Jude Bellingham", team: "England", pos: "Midfielder", debut: 2022, note: "England's young engine and one of the best midfielders in the world — the player they'll lean on to finally end a title drought since 1966.",
+        stats: [["Club", "Real Madrid"], ["Age", "22"], ["Position", "Mid"]],
+        facts: ["A Champions League winner at club level.", "Became a star at a remarkably young age.", "Central to England's title hopes."],
+        link: "https://en.wikipedia.org/wiki/Jude_Bellingham" },
+      { name: "Christian Pulisic", team: "USA", pos: "Forward", debut: 2022, note: "The face of US soccer and the host nation's biggest star. The player Americans will rally around as the USA chases a deep home run.",
+        stats: [["Caps", "70+"], ["Club", "AC Milan"], ["Age", "27"]],
+        facts: ["The most prominent American men's player of his generation.", "Plays for AC Milan in Italy's Serie A.", "Captains the US attack on home soil."],
+        link: "https://en.wikipedia.org/wiki/Christian_Pulisic" },
+      { name: "Vinícius Júnior", team: "Brazil", pos: "Forward", debut: 2022, note: "Brazil's electric winger and one of the most exciting dribblers in the game, leading a five-time champion hungry for another title.",
+        stats: [["Club", "Real Madrid"], ["Age", "25"], ["Position", "Wing"]],
+        facts: ["A Champions League winner with Real Madrid.", "Known for breathtaking one-on-one dribbling.", "The creative spark of Brazil's attack."],
+        link: "https://en.wikipedia.org/wiki/Vin%C3%ADcius_J%C3%BAnior" },
+    ],
+    roster: [
+      { name: "Lamine Yamal", team: "Spain", pos: "Forward" },
+      { name: "Erling Haaland", team: "Norway", pos: "Forward" },
+      { name: "Harry Kane", team: "England", pos: "Forward" },
+      { name: "Kevin De Bruyne", team: "Belgium", pos: "Midfielder" },
+      { name: "Jamal Musiala", team: "Germany", pos: "Midfielder" },
+      { name: "Achraf Hakimi", team: "Morocco", pos: "Defender" },
+      { name: "Virgil van Dijk", team: "Netherlands", pos: "Defender" },
+      { name: "Heung-min Son", team: "South Korea", pos: "Forward" },
+    ],
+    coaches: [
+      { name: "Lionel Scaloni", team: "Argentina", role: "Manager" },
+      { name: "Mauricio Pochettino", team: "USA", role: "Manager" },
+      { name: "Thomas Tuchel", team: "England", role: "Manager" },
+      { name: "Didier Deschamps", team: "France", role: "Manager" },
+      { name: "Carlo Ancelotti", team: "Brazil", role: "Manager" },
     ],
   },
 };
@@ -1892,6 +2016,20 @@ const SPORT_101 = [
       { h: "When it starts", b: "Preseason in August, regular season kicks off September 10. Set an alert for opening weekend." },
     ],
   },
+  {
+    league: "WC",
+    headline: "The World Cup — the biggest event in sports, happening now",
+    season: "June 11 → July 19 · one month, every 4 years",
+    progress: "Group stage wrapping up — knockouts begin early July",
+    sections: [
+      { h: "What it is", b: "The FIFA World Cup is the championship of international soccer, held once every four years. National teams — not clubs — compete, so players represent their home countries. It's the most-watched sporting event on Earth. This year it's hosted across the US, Mexico, and Canada." },
+      { h: "The format — 48 teams, 12 groups", b: "For the first time, 48 teams are split into 12 groups of four. In the group stage, each team plays the other three in its group once. You earn 3 points for a win, 1 for a draw, 0 for a loss." },
+      { h: "How teams advance", b: "The top two teams from each group advance automatically, plus the eight best third-place finishers — 32 teams total move on to the knockout rounds." },
+      { h: "The knockout rounds", b: "From the Round of 32 onward it's single elimination: win or go home. If a knockout game is tied after 90 minutes, it goes to extra time, then a penalty shootout if still level. It builds to the Final on July 19." },
+      { h: "Why it matters", b: "National pride is on the line, the world's best players are all here at once (Messi, Mbappé, Ronaldo), and underdog nations can stun giants. As co-hosts, the USA, Mexico, and Canada are all in — making this a huge moment for North American fans." },
+      { h: "Watching as a casual fan", b: "You don't need to follow a club. Pick a team — your heritage, the host USA, or just a fun underdog like Cape Verde — and follow them through the group stage. Games are on Fox and FS1, streaming on the Fox app." },
+    ],
+  },
 ];
 
 function Sports101Tab() {
@@ -2191,8 +2329,54 @@ function StandingsTab() {
         </>
       )}
 
-      {/* Off-season leagues: status card */}
-      {s.status && (
+      {/* World Cup: all 12 group tables */}
+      {view === "WC" && (
+        <>
+          {Object.keys(WC_GROUPS).map(g => (
+            <div key={g} style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", color: C.inkFaint, marginBottom: 8 }}>
+                GROUP {g}
+              </div>
+              <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
+                <div style={{ display: "flex", padding: "7px 14px", background: lc, fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", color: "#fff" }}>
+                  <span style={{ width: 22 }}>#</span>
+                  <span style={{ flex: 1 }}>TEAM</span>
+                  <span style={{ width: 28, textAlign: "center" }}>W</span>
+                  <span style={{ width: 28, textAlign: "center" }}>D</span>
+                  <span style={{ width: 28, textAlign: "center" }}>L</span>
+                  <span style={{ width: 34, textAlign: "right" }}>PTS</span>
+                </div>
+                {WC_GROUPS[g].map((t, i) => {
+                  const advancing = i < 2; // top 2 advance directly
+                  return (
+                    <div key={t.team} style={{
+                      display: "flex", alignItems: "center", padding: "10px 14px",
+                      background: advancing ? lc + "10" : C.surface,
+                      borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}`,
+                    }}>
+                      <span style={{ width: 22, fontSize: 13, fontWeight: 900, color: advancing ? lc : C.inkFaint }}>{i + 1}</span>
+                      <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 7 }}>
+                        <TeamLogo team={t.team} size={20} />
+                        <span style={{ fontSize: 13.5, fontWeight: 700, color: C.ink }}>{t.team}</span>
+                      </span>
+                      <span style={{ width: 28, textAlign: "center", fontSize: 12, fontWeight: 600, color: C.inkMid }}>{t.w}</span>
+                      <span style={{ width: 28, textAlign: "center", fontSize: 12, fontWeight: 600, color: C.inkMid }}>{t.d}</span>
+                      <span style={{ width: 28, textAlign: "center", fontSize: 12, fontWeight: 600, color: C.inkMid }}>{t.l}</span>
+                      <span style={{ width: 34, textAlign: "right", fontSize: 13, fontWeight: 800, color: advancing ? lc : C.inkMid }}>{t.pts}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: 12, color: C.inkFaint, marginTop: 4, lineHeight: 1.5 }}>
+            Highlighted = top 2 in each group (advance to the knockouts). The 8 best third-place teams also advance. PTS = 3 for a win, 1 for a draw. {s.next}.
+          </div>
+        </>
+      )}
+
+      {/* Off-season leagues: status card (not for WC, which shows group tables) */}
+      {s.status && view !== "WC" && (
         <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "22px 20px" }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: C.ink, marginBottom: 6 }}>{s.status}</div>
           <div style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.6, marginBottom: 14 }}>{s.blurb}</div>
