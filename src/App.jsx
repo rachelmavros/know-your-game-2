@@ -141,6 +141,7 @@ async function fetchSchedule(sport, startDate, endDate) {
 function useLiveSchedule() {
   const [liveEvents, setLiveEvents] = useState(null); // null = not loaded yet
   const [status, setStatus] = useState("idle"); // idle | loading | done | empty
+  const [counts, setCounts] = useState({ wnba: null, mlb: null, wc: null });
 
   useEffect(() => {
     let cancelled = false;
@@ -171,6 +172,7 @@ function useLiveSchedule() {
       add(wc, "WC");
 
       const total = wnba.length + mlb.length + wc.length;
+      setCounts({ wnba: wnba.length, mlb: mlb.length, wc: wc.length });
       setLiveEvents(grouped);
       setStatus(total > 0 ? "done" : "empty");
     };
@@ -178,7 +180,7 @@ function useLiveSchedule() {
     return () => { cancelled = true; };
   }, []);
 
-  return { liveEvents, status };
+  return { liveEvents, status, counts };
 }
 
 // Merge live events into the built-in CAL_EVENTS for a given dateKey.
@@ -1039,7 +1041,7 @@ function CalendarTab({ alerts, onAlert }) {
   const filterEvents = evs => calFilters.sport === "ALL" ? evs : evs.filter(e => e.league === calFilters.sport);
 
   // Live schedule merged over curated highlights
-  const { liveEvents, status: liveStatus } = useLiveSchedule();
+  const { liveEvents, status: liveStatus, counts } = useLiveSchedule();
   const eventsFor = k => mergeDayEvents(k, liveEvents);
 
   const dayEvents = filterEvents(selected ? eventsFor(selected) : []);
@@ -1053,10 +1055,18 @@ function CalendarTab({ alerts, onAlert }) {
 
   return (
     <div>
-      {liveStatus === "done" && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#21A35A", display: "inline-block" }} />
-          Live schedule connected
+      {(liveStatus === "done" || liveStatus === "empty") && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
+          fontSize: 11, color: C.inkFaint, fontWeight: 600,
+          background: C.surface, border: `1px solid ${C.line}`, borderRadius: 8,
+          padding: "7px 10px",
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: liveStatus === "done" ? "#21A35A" : "#C2CAD2", display: "inline-block", flexShrink: 0 }} />
+          <span>
+            {liveStatus === "done" ? "Live schedule connected · " : "No live games returned · "}
+            WNBA: {counts.wnba ?? "—"} · MLB: {counts.mlb ?? "—"} · WC: {counts.wc ?? "—"}
+          </span>
         </div>
       )}
       {/* Sport filter pills */}
