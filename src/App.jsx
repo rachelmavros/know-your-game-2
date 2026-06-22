@@ -478,7 +478,7 @@ const CAL_EVENTS = {
     { league: "WC",   away: "Cape Verde", home: "Uruguay", time: "5:00 PM CT", verdict: 3, channel: "Fox Sports", note: "Cape Verde is this World Cup's great underdog story." },
   ],
   "2026-06-22": [
-    { league: "WC",   away: "Austria", home: "Argentina", time: "1:00 PM CT", verdict: 5, channel: "Fox", note: "Defending champions Argentina, led by Lionel Messi in likely his final World Cup, look to lock up the group. Their biggest draw of the group stage." },
+    { league: "WC",   away: "Austria", home: "Argentina", time: "12:00 PM CT", verdict: 5, channel: "Fox", note: "Defending champions Argentina, led by Lionel Messi in likely his final World Cup, look to lock up the group. Their biggest draw of the group stage." },
     { league: "WC",   away: "Iraq", home: "France", time: "5:00 PM CT", verdict: 4, channel: "Fox", note: "France — runners-up in 2022 and a tournament favorite with Mbappé — are heavily favored against an Iraq side making a rare World Cup appearance." },
     { league: "WC",   away: "Senegal", home: "Norway", time: "8:00 PM CT", verdict: 3, channel: "Fox", note: "A tight Group I clash with real knockout-round implications — Norway, back at the World Cup after decades, against an athletic Senegal side." },
     { league: "WC",   away: "Algeria", home: "Jordan", time: "11:00 PM CT", verdict: 2, channel: "FS1", note: "A late-night group-stage game between two teams chasing an outside shot at advancing." },
@@ -501,11 +501,16 @@ const CAL_EVENTS = {
 
 // Season-context used by the AI rundown and the Sports 101 tab
 const SEASON_CONTEXT = {
-  WNBA: { phase: "Regular Season", pct: 32, detail: "Mid-season — 44-game schedule running May through September. Playoffs (8 teams) begin mid-September." },
-  NBA:  { phase: "Off-season", pct: 0, detail: "The Knicks won the 2026 championship, beating the Spurs 4–1. The season is over — next season tips off in October." },
-  MLB:  { phase: "Regular Season", pct: 44, detail: "Mid-season of a 162-game grind. Standings tighten in August; playoffs start in October." },
-  NFL:  { phase: "Off-season", pct: 0, detail: "Nothing live yet. Preseason starts in August, regular season September 10." },
-  WC:   { phase: "Group Stage", pct: 25, detail: "The 2026 World Cup is underway across the US, Mexico, and Canada — 48 teams competing. Knockout rounds begin in early July." },
+  WNBA: { phase: "Regular Season", pct: 32, detail: "Mid-season — 44-game schedule running May through September. Playoffs (8 teams) begin mid-September.",
+    upNext: [["Now", "Regular season"], ["Mid-Sept", "Playoffs begin (top 8)"], ["October", "WNBA Finals"]] },
+  NBA:  { phase: "Off-season", pct: 0, detail: "The Knicks won the 2026 championship, beating the Spurs 4–1. The season is over — next season tips off in October.",
+    upNext: [["Now", "Off-season"], ["June", "NBA Draft"], ["October", "Next season tips off"]] },
+  MLB:  { phase: "Regular Season", pct: 44, detail: "Mid-season of a 162-game grind. Standings tighten in August; playoffs start in October.",
+    upNext: [["Now", "Regular season"], ["July", "All-Star Game"], ["October", "Playoffs & World Series"]] },
+  NFL:  { phase: "Off-season", pct: 0, detail: "Nothing live yet. Preseason starts in August, regular season September 10.",
+    upNext: [["Now", "Off-season"], ["August", "Preseason"], ["Sept 10", "Regular season kicks off"]] },
+  WC:   { phase: "Group Stage", pct: 25, detail: "The 2026 World Cup is underway across the US, Mexico, and Canada — 48 teams competing. Knockout rounds begin in early July.",
+    upNext: [["Now", "Group stage"], ["Early July", "Round of 32 (knockouts begin)"], ["Mid-July", "Quarters & semis"], ["July 19", "World Cup Final"]] },
 };
 
 // Sport emoji per league — used on headlines everywhere
@@ -2395,7 +2400,32 @@ function StandingsTab() {
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
         <span style={{ fontSize: 20, fontWeight: 900, color: C.ink }}>{s.emoji} {s.label}</span>
       </div>
-      <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 18 }}>{s.blurb}</p>
+      <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 14 }}>{s.blurb}</p>
+
+      {/* What's next — season progression timeline */}
+      {SEASON_CONTEXT[view]?.upNext && (
+        <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px", marginBottom: 18 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>
+            WHAT'S NEXT
+          </div>
+          {SEASON_CONTEXT[view].upNext.map(([when, what], i, arr) => {
+            const current = i === 0;
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: i === arr.length - 1 ? 0 : 9 }}>
+                <span style={{
+                  width: 8, height: 8, borderRadius: "50%", flexShrink: 0, marginTop: 4,
+                  background: current ? lc : "transparent",
+                  border: current ? "none" : `2px solid ${C.line}`,
+                }} />
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: current ? lc : C.ink }}>{what}</span>
+                  <span style={{ fontSize: 12, color: C.inkFaint, marginLeft: 7 }}>{when}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* NBA: bracket + "same table" wrapper */}
       {view === "NBA" && (
@@ -2772,6 +2802,77 @@ function PlayersTab() {
   );
 }
 
+/* ─── FEEDBACK ─────────────────────────────────────────────── */
+
+function FeedbackTab() {
+  const [kind, setKind] = useState("Idea / feature");
+  const [msg, setMsg] = useState("");
+  const [sent, setSent] = useState(false);
+
+  // No backend yet — feedback opens a pre-filled email to the developer.
+  // Swap this address for your real one.
+  const DEV_EMAIL = "your-email@example.com";
+
+  const submit = () => {
+    const subject = encodeURIComponent(`[Know Your Game] ${kind}`);
+    const body = encodeURIComponent(msg || "");
+    window.location.href = `mailto:${DEV_EMAIL}?subject=${subject}&body=${body}`;
+    setSent(true);
+  };
+
+  const kinds = ["Idea / feature", "Incorrect info", "Bug / something broke", "Just saying hi"];
+
+  return (
+    <div>
+      <div style={{ fontSize: 22, fontWeight: 900, color: C.ink, marginBottom: 6, letterSpacing: "-0.01em" }}>
+        Submit your feedback
+      </div>
+      <p style={{ fontSize: 14, color: C.inkMid, lineHeight: 1.65, marginBottom: 22 }}>
+        Have feedback for our developers (me) or an idea for a new feature? Spot incorrect information? Disagree that Angel Reese is the greatest rebounder in all of basketball history? Help make this app a slam dunk and further achieve our mission to educate other poor, helpless novice sports fans like our founder who just wants to know when Caitlin Clark is playing or if a casual pickup game of World Cup soccer is going on or not.
+      </p>
+
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", color: C.inkFaint, marginBottom: 8 }}>
+        WHAT'S THIS ABOUT?
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
+        {kinds.map(k => (
+          <button key={k} onClick={() => setKind(k)} style={{
+            padding: "8px 14px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit",
+            fontSize: 12.5, fontWeight: 700,
+            border: `1px solid ${kind === k ? C.red : C.line}`,
+            background: kind === k ? C.redSoft : C.surface,
+            color: kind === k ? C.red : C.inkMid,
+          }}>{k}</button>
+        ))}
+      </div>
+
+      <textarea
+        value={msg}
+        onChange={e => setMsg(e.target.value)}
+        placeholder="Tell us what's on your mind…"
+        rows={6}
+        style={{
+          width: "100%", padding: "14px 16px", borderRadius: 12, border: `1px solid ${C.line}`,
+          fontSize: 14, fontFamily: "inherit", color: C.ink, background: C.surface,
+          resize: "vertical", lineHeight: 1.5, marginBottom: 16, boxSizing: "border-box",
+        }}
+      />
+
+      <button onClick={submit} disabled={!msg.trim()} style={{
+        width: "100%", background: msg.trim() ? C.red : C.line, color: "#fff", border: "none",
+        borderRadius: 10, padding: "13px", fontSize: 14, fontWeight: 800,
+        cursor: msg.trim() ? "pointer" : "default", fontFamily: "inherit",
+      }}>Send feedback →</button>
+
+      {sent && (
+        <p style={{ fontSize: 13, color: C.inkMid, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>
+          Your email app should have opened with your message ready to send. Thanks for helping make the app better!
+        </p>
+      )}
+    </div>
+  );
+}
+
 /* ─── DAILY RUNDOWN POP-UP ─────────────────────────────────────
    Greets the user once per day with an AI rundown of today's notable
    games. Auto-generates on open. X dismisses into the normal app, and
@@ -3011,9 +3112,10 @@ export default function App() {
     { id: "calendar", label: "Calendar" },
     { id: "standings", label: "Standings" },
     { id: "players", label: "Players" },
+    { id: "101", label: "Sports 101" },
     { id: "alerts", label: `Alerts${alertCount?` · ${alertCount}`:""}` },
     { id: "edit", label: "Follow ★" },
-    { id: "101", label: "Sports 101" },
+    { id: "feedback", label: "Feedback" },
   ];
 
   return (
@@ -3140,6 +3242,7 @@ export default function App() {
         {tab === "alerts" && <AlertsTab prefs={prefs} onPrefChange={prefChange} gameAlerts={gameAlerts} calAlerts={calAlerts} />}
         {tab === "edit" && <EditTab stars={stars} onToggleLeague={toggleLeague} onToggleTeam={toggleTeam} />}
         {tab === "101" && <Sports101Tab />}
+        {tab === "feedback" && <FeedbackTab />}
       </main>
 
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={handleLogin} />}
