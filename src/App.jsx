@@ -141,7 +141,7 @@ async function fetchSchedule(sport, startDate, endDate) {
 function useLiveSchedule() {
   const [liveEvents, setLiveEvents] = useState(null); // null = not loaded yet
   const [status, setStatus] = useState("idle"); // idle | loading | done | empty
-  const [counts, setCounts] = useState({ wnba: null, mlb: null, wc: null });
+  const [counts, setCounts] = useState({ wnba: null, mlb: null });
 
   useEffect(() => {
     let cancelled = false;
@@ -151,10 +151,11 @@ function useLiveSchedule() {
       const start = addDays(today, -7);
       const end = addDays(today, 21);
 
-      const [wnba, mlb, wc] = await Promise.all([
+      // WNBA + MLB are free. World Cup matches are paid-tier only, so those
+      // games stay hand-curated in CAL_EVENTS and aren't fetched here.
+      const [wnba, mlb] = await Promise.all([
         fetchSchedule("wnba", start, end),
         fetchSchedule("mlb", start, end),
-        fetchSchedule("worldcup", start, end),
       ]);
 
       if (cancelled) return;
@@ -169,10 +170,9 @@ function useLiveSchedule() {
       };
       add(wnba, "WNBA");
       add(mlb, "MLB");
-      add(wc, "WC");
 
-      const total = wnba.length + mlb.length + wc.length;
-      setCounts({ wnba: wnba.length, mlb: mlb.length, wc: wc.length });
+      const total = wnba.length + mlb.length;
+      setCounts({ wnba: wnba.length, mlb: mlb.length });
       setLiveEvents(grouped);
       setStatus(total > 0 ? "done" : "empty");
     };
@@ -407,23 +407,24 @@ const CAL_EVENTS = {
     { league: "WC",   away: "Cape Verde", home: "Uruguay", time: "5:00 PM CT", verdict: 3, channel: "Fox Sports", note: "Cape Verde is this World Cup's great underdog story." },
   ],
   "2026-06-22": [
-    { league: "WC",   away: "Egypt", home: "New Zealand", time: "8:00 PM CT", verdict: 2, channel: "Fox Sports", note: "Group stage finale for both sides." },
-    { league: "WC",   away: "Austria", home: "Argentina", time: "12:00 PM CT", verdict: 4, channel: "Fox Sports", note: "Argentina, the defending champions, are in action." },
-    { league: "WC",   away: "Iraq", home: "France", time: "4:00 PM CT", verdict: 4, channel: "Fox Sports", note: "France are heavy favorites." },
-    { league: "WNBA", away: "Chicago Sky", home: "Connecticut Sun", time: "6:00 PM CT", verdict: 3, channel: "League Pass", note: "Two playoff-hopeful teams." },
-    { league: "WNBA", away: "Toronto Tempo", home: "Atlanta Dream", time: "6:30 PM CT", verdict: 3, channel: "League Pass", note: "Atlanta heavily favored at home." },
+    { league: "WC",   away: "Austria", home: "Argentina", time: "1:00 PM CT", verdict: 5, channel: "Fox", note: "Defending champions Argentina, with Messi, in group play. Big draw." },
+    { league: "WC",   away: "Iraq", home: "France", time: "5:00 PM CT", verdict: 4, channel: "Fox", note: "France are heavy favorites and a tournament contender." },
+    { league: "WC",   away: "Senegal", home: "Norway", time: "8:00 PM CT", verdict: 3, channel: "Fox", note: "Group I clash with knockout-round implications." },
+    { league: "WC",   away: "Algeria", home: "Jordan", time: "11:00 PM CT", verdict: 2, channel: "FS1", note: "Late group-stage game." },
   ],
   "2026-06-23": [
-    { league: "WC",   away: "Senegal", home: "Norway", time: "7:00 PM CT", verdict: 3, channel: "Fox Sports", note: "Tight group stage matchup." },
-    { league: "WC",   away: "Algeria", home: "Jordan", time: "10:00 PM CT", verdict: 2, channel: "Fox Sports", note: "Algeria favored." },
+    { league: "WC",   away: "Uzbekistan", home: "Portugal", time: "1:00 PM CT", verdict: 4, channel: "Fox", note: "Portugal — one of the tournament favorites — in group play." },
+    { league: "WC",   away: "Ghana", home: "England", time: "4:00 PM CT", verdict: 4, channel: "FS1", note: "England, a top contender, faces Ghana." },
+    { league: "WC",   away: "Croatia", home: "Panama", time: "7:00 PM CT", verdict: 3, channel: "Fox", note: "Croatia, 2018 finalists, in group action." },
+    { league: "WC",   away: "DR Congo", home: "Colombia", time: "10:00 PM CT", verdict: 3, channel: "FS1", note: "Colombia favored in a Group K matchup." },
   ],
   "2026-06-24": [
-    { league: "WC",   away: "Uzbekistan", home: "Portugal", time: "12:00 PM CT", verdict: 4, channel: "Fox Sports", note: "Portugal — one of the tournament favorites." },
-    { league: "WNBA", away: "Phoenix Mercury", home: "Indiana Fever", time: "6:30 PM CT", verdict: 4, channel: "ESPN", note: "Clark and the Fever back on national TV." },
+    { league: "WC",   away: "Scotland", home: "Brazil", time: "6:00 PM CT", verdict: 5, channel: "Fox", note: "Brazil — five-time champions — are must-watch any time they play." },
+    { league: "WC",   away: "Czechia", home: "Mexico", time: "9:00 PM CT", verdict: 4, channel: "Fox", note: "Co-hosts Mexico in a big group-stage finale at home." },
   ],
   "2026-06-25": [
-    { league: "WC",   away: "Ghana", home: "England", time: "3:00 PM CT", verdict: 4, channel: "Fox Sports", note: "England is one of the tournament's top contenders." },
-    { league: "WNBA", away: "New York Liberty", home: "Indiana Fever", time: "5:00 PM CT", verdict: 5, channel: "ESPN", note: "Fever–Liberty rivalry game. Clark vs. the defending East powers." },
+    { league: "WC",   away: "Ecuador", home: "Germany", time: "4:00 PM CT", verdict: 4, channel: "Fox", note: "Germany, four-time champions, in a group-stage decider." },
+    { league: "WC",   away: "Turkiye", home: "USA", time: "10:00 PM CT", verdict: 5, channel: "Fox", note: "🇺🇸 USA's final group game — host nation, huge national interest." },
   ],
 };
 
@@ -1055,18 +1056,13 @@ function CalendarTab({ alerts, onAlert }) {
 
   return (
     <div>
-      {(liveStatus === "done" || liveStatus === "empty") && (
+      {liveStatus === "done" && (
         <div style={{
-          display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
+          display: "flex", alignItems: "center", gap: 6, marginBottom: 10,
           fontSize: 11, color: C.inkFaint, fontWeight: 600,
-          background: C.surface, border: `1px solid ${C.line}`, borderRadius: 8,
-          padding: "7px 10px",
         }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: liveStatus === "done" ? "#21A35A" : "#C2CAD2", display: "inline-block", flexShrink: 0 }} />
-          <span>
-            {liveStatus === "done" ? "Live schedule connected · " : "No live games returned · "}
-            WNBA: {counts.wnba ?? "—"} · MLB: {counts.mlb ?? "—"} · WC: {counts.wc ?? "—"}
-          </span>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#21A35A", display: "inline-block", flexShrink: 0 }} />
+          Live schedule connected
         </div>
       )}
       {/* Sport filter pills */}
@@ -2430,17 +2426,67 @@ export default function App() {
     (filters.team === "ALL" || g.home === filters.team || g.away === filters.team) &&
     (filters.city === "ALL" || g.city === filters.city);
 
-  const visible = GAMES.filter(matches);
-  const hero = visible.find(g => g.featured);
-  const live = visible.filter(g => g.status === "live");
-  const rest = visible.filter(g => !g.featured && g.status !== "live").sort((a,b)=>b.verdict-a.verdict);
+  // Live schedule for today (WNBA + MLB). World Cup stays curated.
+  const { liveEvents: appLiveEvents, status: appLiveStatus } = useLiveSchedule();
+  const todayK = todayKey();
+  const liveToday = (appLiveEvents && appLiveEvents[todayK]) ? appLiveEvents[todayK] : [];
 
-  // The full remaining slate — condensed grey one-liners, respects filters
+  // Curated games for today (with verdicts, blurbs, featured flags)
+  const curatedToday = GAMES.filter(g => g.dateKey === todayK);
+  const curatedKeys = new Set(curatedToday.map(g => `${g.league}:${g.homeAbbr || g.home}:${g.awayAbbr || g.away}`));
+
+  // Live games not already covered by a curated entry → fill the slate
+  const liveExtras = liveToday
+    .filter(e => !curatedKeys.has(`${e.league}:${e.homeAbbr || e.home}:${e.awayAbbr || e.away}`))
+    .map(e => ({
+      id: `live-${e.league}-${e.homeAbbr}-${e.awayAbbr}`,
+      league: e.league, city: e.home, // city best-effort
+      home: e.home, homeAbbr: e.homeAbbr, away: e.away, awayAbbr: e.awayAbbr,
+      time: e.time, day: "Today", dateKey: e.dateKey,
+      status: "upcoming", verdict: e.verdict || 3,
+      tagline: "", summary: "",
+      channel: "", channelUrl: "",
+      fromApi: true,
+    }));
+
+  // Build the Today sections from curated + live, then filter
+  // Curated World Cup games for today come from CAL_EVENTS (WC is paid-tier
+  // on the API, so it's hand-maintained). Convert to the Today game shape.
+  const curatedWCToday = (CAL_EVENTS[todayK] || [])
+    .filter(e => e.league === "WC")
+    .map(e => ({
+      id: `wc-${e.homeAbbr || e.home}-${e.awayAbbr || e.away}`,
+      league: "WC", city: e.home,
+      home: e.home, homeAbbr: e.homeAbbr, away: e.away, awayAbbr: e.awayAbbr,
+      time: e.time, day: "Today", dateKey: todayK,
+      status: "upcoming", verdict: e.verdict || 3,
+      tagline: "", summary: e.note || "",
+      channel: e.channel || "", channelUrl: "",
+    }));
+
+  const allToday = [...GAMES, ...curatedWCToday, ...liveExtras];
+  const visible = allToday.filter(matches);
+  let hero = visible.find(g => g.featured && g.dateKey === todayK);
+  const live = visible.filter(g => g.status === "live" && g.dateKey === todayK);
+  const todayNonHero = visible.filter(g => g.dateKey === todayK && g !== hero && g.status !== "live");
+
+  // If no curated Editor's Pick exists for today, promote the highest-verdict
+  // game (live or curated) so the Today tab always has a hero.
+  if (!hero) {
+    const candidates = visible
+      .filter(g => g.dateKey === todayK && g.status !== "live")
+      .sort((a,b) => b.verdict - a.verdict);
+    hero = candidates[0] || null;
+  }
+  const restPool = visible.filter(g => g.dateKey === todayK && g !== hero && g.status !== "live");
+  const rest = restPool.filter(g => g.verdict >= 3).sort((a,b)=>b.verdict-a.verdict);
+
+  // The full remaining slate — condensed grey one-liners (lower-stakes games)
   const otherMatches = g =>
     (filters.sport === "ALL" || g.league === filters.sport) &&
     (filters.team === "ALL" || g.home === filters.team || g.away === filters.team) &&
     (filters.city === "ALL" || g.city === filters.city);
-  const otherGames = OTHER_GAMES.filter(otherMatches);
+  const otherGames = restPool.filter(g => g.verdict <= 2).filter(otherMatches);
 
   const starCount = (stars.leagues?.length||0) + (stars.teams?.length||0);
   const alertCount = gameAlerts.length + calAlerts.length;
@@ -2516,6 +2562,12 @@ export default function App() {
           <>
             <WeekRundown />
             <FilterBar filters={filters} setFilters={setFilters} />
+            {appLiveStatus === "done" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#21A35A", display: "inline-block", flexShrink: 0 }} />
+                Live schedule connected
+              </div>
+            )}
             {hero && <HeroCard game={hero} alertOn={gameAlerts.includes(hero.id)} onAlert={toggleGameAlert} />}
             {live.length > 0 && (
               <div style={{ marginBottom: 22 }}>
