@@ -533,6 +533,68 @@ const teamAbbr = name => {
   return last.slice(0, 3).toUpperCase();
 };
 
+/* ─── TEAM IMAGES (logos / flags) ──────────────────────────────
+   Real logos & flags with graceful fallback to monogram badges.
+   World Cup nations → country flags via flagcdn (hotlink-friendly).
+   WNBA / MLB → ESPN's public logo CDN (may or may not load; falls
+   back to monogram automatically if blocked). Nothing breaks if an
+   image fails — the <img> onError swaps in the existing badge.
+   ──────────────────────────────────────────────────────────────── */
+
+// ISO 2-letter codes for World Cup nations → flagcdn flags.
+const NATION_FLAG = {
+  "Argentina": "ar", "France": "fr", "Portugal": "pt", "England": "gb-eng",
+  "USA": "us", "Brazil": "br", "Spain": "es", "Germany": "de", "Mexico": "mx",
+  "Canada": "ca", "Netherlands": "nl", "Belgium": "be", "Croatia": "hr",
+  "Morocco": "ma", "Japan": "jp", "South Korea": "kr", "Uruguay": "uy",
+  "Colombia": "co", "Switzerland": "ch", "Senegal": "sn", "Norway": "no",
+  "Australia": "au", "Iran": "ir", "Saudi Arabia": "sa", "Egypt": "eg",
+  "Ghana": "gh", "Ivory Coast": "ci", "Ecuador": "ec", "Scotland": "gb-sct",
+  "Cape Verde": "cv", "Austria": "at", "Sweden": "se", "Tunisia": "tn",
+  "Paraguay": "py", "Türkiye": "tr", "Turkiye": "tr", "New Zealand": "nz",
+  "Qatar": "qa", "South Africa": "za", "Czechia": "cz", "Haiti": "ht",
+  "Bosnia & Herz.": "ba", "Curaçao": "cw", "DR Congo": "cd", "Congo DR": "cd",
+  "Uzbekistan": "uz", "Panama": "pa", "Jordan": "jo", "Algeria": "dz", "Iraq": "iq",
+};
+
+// ESPN logo CDN abbreviations for WNBA & MLB (lowercase team codes).
+const ESPN_LOGO = {
+  // WNBA
+  "Indiana Fever": ["wnba", "ind"], "Las Vegas Aces": ["wnba", "lv"],
+  "New York Liberty": ["wnba", "ny"], "Chicago Sky": ["wnba", "chi"],
+  "Dallas Wings": ["wnba", "dal"], "Minnesota Lynx": ["wnba", "min"],
+  "Phoenix Mercury": ["wnba", "phx"], "Seattle Storm": ["wnba", "sea"],
+  "Atlanta Dream": ["wnba", "atl"], "Connecticut Sun": ["wnba", "conn"],
+  "Washington Mystics": ["wnba", "wsh"], "Los Angeles Sparks": ["wnba", "la"],
+  "Golden State Valkyries": ["wnba", "gs"],
+  // MLB
+  "New York Yankees": ["mlb", "nyy"], "Los Angeles Dodgers": ["mlb", "lad"],
+  "Chicago Cubs": ["mlb", "chc"], "Chicago White Sox": ["mlb", "chw"],
+  "Atlanta Braves": ["mlb", "atl"], "Houston Astros": ["mlb", "hou"],
+  "Philadelphia Phillies": ["mlb", "phi"], "New York Mets": ["mlb", "nym"],
+  "San Diego Padres": ["mlb", "sd"], "Boston Red Sox": ["mlb", "bos"],
+  "Baltimore Orioles": ["mlb", "bal"], "Toronto Blue Jays": ["mlb", "tor"],
+  "Detroit Tigers": ["mlb", "det"], "Cleveland Guardians": ["mlb", "cle"],
+  "Minnesota Twins": ["mlb", "min"], "Kansas City Royals": ["mlb", "kc"],
+  "Texas Rangers": ["mlb", "tex"], "Seattle Mariners": ["mlb", "sea"],
+  "Colorado Rockies": ["mlb", "col"], "Arizona Diamondbacks": ["mlb", "ari"],
+  "San Francisco Giants": ["mlb", "sf"], "Miami Marlins": ["mlb", "mia"],
+  "Tampa Bay Rays": ["mlb", "tb"], "Washington Nationals": ["mlb", "wsh"],
+  "Milwaukee Brewers": ["mlb", "mil"], "Cincinnati Reds": ["mlb", "cin"],
+  "St. Louis Cardinals": ["mlb", "stl"], "Pittsburgh Pirates": ["mlb", "pit"],
+  "Los Angeles Angels": ["mlb", "laa"], "Athletics": ["mlb", "ath"],
+};
+
+// Returns a real image URL for a team, or null if none known.
+function teamImageUrl(team) {
+  if (NATION_FLAG[team]) return `https://flagcdn.com/h120/${NATION_FLAG[team]}.png`;
+  if (ESPN_LOGO[team]) {
+    const [lg, code] = ESPN_LOGO[team];
+    return `https://a.espncdn.com/i/teamlogos/${lg}/500/${code}.png`;
+  }
+  return null;
+}
+
 // Sports 101 external reading links per league
 const SPORT_101_LINKS = {
   WNBA: { label: "WNBA.com — official site", url: "https://www.wnba.com" },
@@ -949,7 +1011,11 @@ function LeaguePill({ league, small }) {
 // Team logo badge — colored disc with the team's monogram. Always renders, no broken images.
 function TeamLogo({ team, size = 26 }) {
   const c = teamColor(team);
-  return (
+  const url = teamImageUrl(team);
+  const [failed, setFailed] = useState(false);
+
+  // Monogram badge — the fallback (and what shows if no image URL exists)
+  const badge = (
     <span style={{
       display: "inline-flex", alignItems: "center", justifyContent: "center",
       width: size, height: size, borderRadius: "50%", flexShrink: 0,
@@ -957,6 +1023,28 @@ function TeamLogo({ team, size = 26 }) {
       letterSpacing: "0.02em", border: "1.5px solid rgba(255,255,255,0.25)",
       boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
     }}>{teamAbbr(team)}</span>
+  );
+
+  if (!url || failed) return badge;
+
+  // Real image with white circular backing; falls back to badge on error.
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      width: size, height: size, borderRadius: "50%", flexShrink: 0,
+      background: "#fff", border: `1px solid ${C.line}`, overflow: "hidden",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
+    }}>
+      <img
+        src={url}
+        alt={team}
+        width={size * 0.78}
+        height={size * 0.78}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        style={{ objectFit: "contain", width: size * 0.78, height: size * 0.78 }}
+      />
+    </span>
   );
 }
 
@@ -2402,10 +2490,24 @@ function StandingsTab() {
 
 /* ─── PLAYERS TAB ─────────────────────────────────────────── */
 
+// Real player headshots/photos for marquee stars (Wikimedia Commons —
+// hotlink-friendly). Falls back to the initials avatar if any fail to load.
+const PLAYER_PHOTO = {
+  "Lionel Messi": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Lionel-Messi-Argentina-2022-FIFA-World-Cup_%28cropped%29.jpg/240px-Lionel-Messi-Argentina-2022-FIFA-World-Cup_%28cropped%29.jpg",
+  "Kylian Mbappé": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bd/Kylian_Mbapp%C3%A9_2018_%28cropped%29.jpg/240px-Kylian_Mbapp%C3%A9_2018_%28cropped%29.jpg",
+  "Cristiano Ronaldo": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8c/Cristiano_Ronaldo_2018.jpg/240px-Cristiano_Ronaldo_2018.jpg",
+  "Jude Bellingham": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/Jude_Bellingham_2023_%28cropped%29.jpg/240px-Jude_Bellingham_2023_%28cropped%29.jpg",
+  "Christian Pulisic": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/93/Christian_Pulisic_2019_%28cropped%29.jpg/240px-Christian_Pulisic_2019_%28cropped%29.jpg",
+  "Vinícius Júnior": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/Vinicius_Junior_2021.jpg/240px-Vinicius_Junior_2021.jpg",
+};
+
 function PlayerAvatar({ name, team, size = 56 }) {
   const c = teamColor(team);
   const initials = name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
-  return (
+  const photo = PLAYER_PHOTO[name];
+  const [failed, setFailed] = useState(false);
+
+  const fallbackAvatar = (
     <div style={{
       width: size, height: size, borderRadius: "50%", flexShrink: 0,
       background: `linear-gradient(135deg, ${c} 0%, ${c}AA 100%)`,
@@ -2413,6 +2515,25 @@ function PlayerAvatar({ name, team, size = 56 }) {
       fontSize: size * 0.32, fontWeight: 900, color: "#fff",
       border: `2px solid ${c}55`,
     }}>{initials}</div>
+  );
+
+  if (!photo || failed) return fallbackAvatar;
+
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: "50%", flexShrink: 0,
+      overflow: "hidden", border: `2px solid ${c}55`, background: c,
+    }}>
+      <img
+        src={photo}
+        alt={name}
+        width={size}
+        height={size}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        style={{ width: size, height: size, objectFit: "cover", objectPosition: "top center" }}
+      />
+    </div>
   );
 }
 
