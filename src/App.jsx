@@ -97,15 +97,76 @@ function bdlToLocal(iso) {
 }
 
 // Map one BallDontLie game object → the app's lightweight calendar-event shape.
+// Short "why watch" context for notable teams, used to auto-generate
+// descriptions for live API games that don't have curated blurbs.
+const TEAM_NOTES = {
+  // WNBA — stars and contenders
+  "Indiana Fever": "Caitlin Clark's team — the league's biggest draw",
+  "New York Liberty": "defending-caliber contender with a deep roster",
+  "Las Vegas Aces": "perennial title contenders led by A'ja Wilson",
+  "Minnesota Lynx": "one of the league's best teams this season",
+  "Connecticut Sun": "rebuilding after losing key veterans",
+  "Chicago Sky": "Angel Reese's team, fighting for a playoff spot",
+  "Phoenix Mercury": "a veteran group in the playoff hunt",
+  "Seattle Storm": "a steady playoff team out West",
+  "Atlanta Dream": "a young team on the rise in the East",
+  "Los Angeles Sparks": "a storied franchise rebuilding its core",
+  "Washington Mystics": "in a rebuilding year",
+  "Dallas Wings": "building around young talent",
+  "Golden State Valkyries": "the league's exciting newest franchise",
+  "Toronto Tempo": "a brand-new expansion team",
+  "Portland Fire": "an expansion team in its debut season",
+  // MLB — marquee draws
+  "Los Angeles Dodgers": "baseball's biggest draw, with Shohei Ohtani",
+  "New York Yankees": "the sport's most storied franchise",
+  "Chicago Cubs": "always a draw at Wrigley Field",
+  "Atlanta Braves": "a perennial contender",
+  "Houston Astros": "a recent powerhouse, usually in the hunt",
+  "Philadelphia Phillies": "a hard-hitting playoff contender",
+  "New York Mets": "a big-market team chasing October",
+  "San Diego Padres": "a star-studded West Coast club",
+  "Boston Red Sox": "a storied AL East franchise",
+};
+
+// Build a short, informative description for a live API game.
+function describeMatchup(away, home, league) {
+  const homeNote = TEAM_NOTES[home];
+  const awayNote = TEAM_NOTES[away];
+
+  let tagline, summary;
+  if (league === "MLB") {
+    tagline = `${away} at ${home}`;
+  } else {
+    tagline = `${away} at ${home}`;
+  }
+
+  // Compose a 1–2 sentence summary using whatever notes we have.
+  if (homeNote && awayNote) {
+    summary = `${home} (${homeNote}) host ${away} (${awayNote}). A matchup with star power on both sides.`;
+  } else if (homeNote) {
+    summary = `${home} — ${homeNote} — host ${away} in ${league === "MLB" ? "a regular-season matchup" : "league play"}.`;
+  } else if (awayNote) {
+    summary = `${away} — ${awayNote} — head to ${home} for ${league === "MLB" ? "a regular-season game" : "a road test"}.`;
+  } else {
+    summary = league === "MLB"
+      ? `A regular-season matchup between ${away} and ${home} — good background baseball.`
+      : `A WNBA matchup between ${away} and ${home}.`;
+  }
+  return { tagline, summary };
+}
+
 function mapBdlGame(g, league) {
   const home = g.home_team || {};
   const visitor = g.visitor_team || {};
   const { dateKey, time } = bdlToLocal(g.date);
+  const homeName = home.full_name || home.name || "";
+  const awayName = visitor.full_name || visitor.name || "";
+  const { tagline, summary } = describeMatchup(awayName, homeName, league);
   return {
     league,
-    home: home.full_name || home.name || "",
+    home: homeName,
     homeAbbr: fixAbbr(home.abbreviation),
-    away: visitor.full_name || visitor.name || "",
+    away: awayName,
     awayAbbr: fixAbbr(visitor.abbreviation),
     time,
     dateKey,
@@ -116,7 +177,9 @@ function mapBdlGame(g, league) {
     status: g.status,
     homeScore: g.home_score,
     awayScore: g.away_score,
-    note: "",
+    tagline,
+    summary,
+    note: summary,
     fromApi: true,
   };
 }
@@ -407,24 +470,24 @@ const CAL_EVENTS = {
     { league: "WC",   away: "Cape Verde", home: "Uruguay", time: "5:00 PM CT", verdict: 3, channel: "Fox Sports", note: "Cape Verde is this World Cup's great underdog story." },
   ],
   "2026-06-22": [
-    { league: "WC",   away: "Austria", home: "Argentina", time: "1:00 PM CT", verdict: 5, channel: "Fox", note: "Defending champions Argentina, with Messi, in group play. Big draw." },
-    { league: "WC",   away: "Iraq", home: "France", time: "5:00 PM CT", verdict: 4, channel: "Fox", note: "France are heavy favorites and a tournament contender." },
-    { league: "WC",   away: "Senegal", home: "Norway", time: "8:00 PM CT", verdict: 3, channel: "Fox", note: "Group I clash with knockout-round implications." },
-    { league: "WC",   away: "Algeria", home: "Jordan", time: "11:00 PM CT", verdict: 2, channel: "FS1", note: "Late group-stage game." },
+    { league: "WC",   away: "Austria", home: "Argentina", time: "1:00 PM CT", verdict: 5, channel: "Fox", note: "Defending champions Argentina, led by Lionel Messi in likely his final World Cup, look to lock up the group. Their biggest draw of the group stage." },
+    { league: "WC",   away: "Iraq", home: "France", time: "5:00 PM CT", verdict: 4, channel: "Fox", note: "France — runners-up in 2022 and a tournament favorite with Mbappé — are heavily favored against an Iraq side making a rare World Cup appearance." },
+    { league: "WC",   away: "Senegal", home: "Norway", time: "8:00 PM CT", verdict: 3, channel: "Fox", note: "A tight Group I clash with real knockout-round implications — Norway, back at the World Cup after decades, against an athletic Senegal side." },
+    { league: "WC",   away: "Algeria", home: "Jordan", time: "11:00 PM CT", verdict: 2, channel: "FS1", note: "A late-night group-stage game between two teams chasing an outside shot at advancing." },
   ],
   "2026-06-23": [
-    { league: "WC",   away: "Uzbekistan", home: "Portugal", time: "1:00 PM CT", verdict: 4, channel: "Fox", note: "Portugal — one of the tournament favorites — in group play." },
-    { league: "WC",   away: "Ghana", home: "England", time: "4:00 PM CT", verdict: 4, channel: "FS1", note: "England, a top contender, faces Ghana." },
-    { league: "WC",   away: "Croatia", home: "Panama", time: "7:00 PM CT", verdict: 3, channel: "Fox", note: "Croatia, 2018 finalists, in group action." },
-    { league: "WC",   away: "DR Congo", home: "Colombia", time: "10:00 PM CT", verdict: 3, channel: "FS1", note: "Colombia favored in a Group K matchup." },
+    { league: "WC",   away: "Uzbekistan", home: "Portugal", time: "1:00 PM CT", verdict: 4, channel: "Fox", note: "Portugal — a tournament favorite featuring Cristiano Ronaldo — face World Cup debutants Uzbekistan in a marquee group-stage matchup." },
+    { league: "WC",   away: "Ghana", home: "England", time: "4:00 PM CT", verdict: 4, channel: "FS1", note: "England, perennial contenders chasing their first title since 1966, take on a dangerous Ghana side that can cause an upset." },
+    { league: "WC",   away: "Croatia", home: "Panama", time: "7:00 PM CT", verdict: 3, channel: "Fox", note: "Croatia, 2018 finalists with a veteran core, are favored against a scrappy Panama team enjoying a rare World Cup run." },
+    { league: "WC",   away: "DR Congo", home: "Colombia", time: "10:00 PM CT", verdict: 3, channel: "FS1", note: "Colombia, one of South America's strongest sides, look to secure their place in the knockout rounds in this Group K clash." },
   ],
   "2026-06-24": [
-    { league: "WC",   away: "Scotland", home: "Brazil", time: "6:00 PM CT", verdict: 5, channel: "Fox", note: "Brazil — five-time champions — are must-watch any time they play." },
-    { league: "WC",   away: "Czechia", home: "Mexico", time: "9:00 PM CT", verdict: 4, channel: "Fox", note: "Co-hosts Mexico in a big group-stage finale at home." },
+    { league: "WC",   away: "Scotland", home: "Brazil", time: "6:00 PM CT", verdict: 5, channel: "Fox", note: "Brazil — five-time champions and always must-watch — bring the tournament's deepest attacking talent against a Scotland side savoring its World Cup return." },
+    { league: "WC",   away: "Czechia", home: "Mexico", time: "9:00 PM CT", verdict: 4, channel: "Fox", note: "Co-hosts Mexico close out the group stage at home in front of a massive crowd — a huge national moment with a knockout spot on the line." },
   ],
   "2026-06-25": [
-    { league: "WC",   away: "Ecuador", home: "Germany", time: "4:00 PM CT", verdict: 4, channel: "Fox", note: "Germany, four-time champions, in a group-stage decider." },
-    { league: "WC",   away: "Turkiye", home: "USA", time: "10:00 PM CT", verdict: 5, channel: "Fox", note: "🇺🇸 USA's final group game — host nation, huge national interest." },
+    { league: "WC",   away: "Ecuador", home: "Germany", time: "4:00 PM CT", verdict: 4, channel: "Fox", note: "Germany — four-time world champions — face a physical Ecuador team in a group-stage decider that could shape the knockout bracket." },
+    { league: "WC",   away: "Turkiye", home: "USA", time: "10:00 PM CT", verdict: 5, channel: "Fox", note: "🇺🇸 The USA's final group game on home soil — the biggest match for American fans this tournament, with the host nation fighting to advance." },
   ],
 };
 
@@ -2444,7 +2507,7 @@ export default function App() {
       home: e.home, homeAbbr: e.homeAbbr, away: e.away, awayAbbr: e.awayAbbr,
       time: e.time, day: "Today", dateKey: e.dateKey,
       status: "upcoming", verdict: e.verdict || 3,
-      tagline: "", summary: "",
+      tagline: e.tagline || "", summary: e.summary || e.note || "",
       channel: "", channelUrl: "",
       fromApi: true,
     }));
@@ -2460,7 +2523,7 @@ export default function App() {
       home: e.home, homeAbbr: e.homeAbbr, away: e.away, awayAbbr: e.awayAbbr,
       time: e.time, day: "Today", dateKey: todayK,
       status: "upcoming", verdict: e.verdict || 3,
-      tagline: "", summary: e.note || "",
+      tagline: `${e.away} vs ${e.home} · World Cup`, summary: e.note || "",
       channel: e.channel || "", channelUrl: "",
     }));
 
