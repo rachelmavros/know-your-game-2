@@ -37,22 +37,42 @@ export default async function handler(req, res) {
     return res.status(200).json({ data: [], _note: `Missing ${cfg.keyVar} env var — add it in Vercel settings.` });
   }
 
-  // Build the upstream URL
-  const params = new URLSearchParams();
-  if (start_date) params.set("start_date", start_date);
-  if (end_date) params.set("end_date", end_date);
-  params.set("per_page", "100");
-  const url = `${cfg.base}?${params.toString()}`;
+  // Build the upstream URL (with cursor pagination support)
+  const buildUrl = cursor => {
+    const params = new URLSearchParams();
+    if (start_date) params.set("start_date", start_date);
+    if (end_date) params.set("end_date", end_date);
+    params.set("per_page", "100");
+    if (cursor != null) params.set("cursor", String(cursor));
+    return `${cfg.base}?${params.toString()}`;
+  };
 
   try {
-    const r = await fetch(url, { headers: { Authorization: apiKey } });
-    if (!r.ok) {
+    // Follow next_cursor up to a few pages so we get the full window, not just
+    // the first 100 games (MLB plays ~15/day, so one page isn't enough).
+    // Capped at 4 pages (400 games) to respect the 5-req/min free-tier limit.
+    const all = [];
+    let cursor = null;
+    let upstreamStatus = null;
+    for (let page = 0; page < 4; page++) {
+      const r = await fetch(buildUrl(cursor), { headers: { Authorization: apiKey } });
+      if (!r.ok) {
+        upstreamStatus = r.status;
+        break;
+      }
+      const json = await r.json();
+      if (Array.isArray(json.data)) all.push(...json.data);
+      const next = json.meta && json.meta.next_cursor;
+      if (!next) break;
+      cursor = next;
+    }
+
+    if (all.length === 0 && upstreamStatus) {
       // 401 = key/tier problem, 429 = rate limited. Return empty so the app
       // gracefully falls back to its built-in schedule instead of crashing.
-      return res.status(200).json({ data: [], _upstreamStatus: r.status });
+      return res.status(200).json({ data: [], _upstreamStatus: upstreamStatus });
     }
-    const json = await r.json();
-    return res.status(200).json(json);
+    return res.status(200).json({ data: all });
   } catch (err) {
     return res.status(200).json({ data: [], _error: String(err) });
   }
