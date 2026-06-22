@@ -211,14 +211,22 @@ function useLiveSchedule() {
     const run = async () => {
       setStatus("loading");
       const today = todayKey();
-      const start = addDays(today, -7);
-      const end = addDays(today, 21);
+      // The free tier returns max 100 games per request with no pagination.
+      // MLB plays ~15 games/day, so a wide past-dated window would use up the
+      // 100-game budget before reaching today. Fetch a tight window per sport:
+      // start at today (yesterday for late-night games) so today is always
+      // inside the first 100 rows. WNBA has far fewer games so it gets more
+      // runway; MLB is kept short on purpose.
+      const wnbaStart = addDays(today, -3);
+      const wnbaEnd = addDays(today, 21);
+      const mlbStart = addDays(today, -1);
+      const mlbEnd = addDays(today, 14);
 
       // WNBA + MLB are free. World Cup matches are paid-tier only, so those
       // games stay hand-curated in CAL_EVENTS and aren't fetched here.
       const [wnba, mlb] = await Promise.all([
-        fetchSchedule("wnba", start, end),
-        fetchSchedule("mlb", start, end),
+        fetchSchedule("wnba", wnbaStart, wnbaEnd),
+        fetchSchedule("mlb", mlbStart, mlbEnd),
       ]);
 
       if (cancelled) return;
