@@ -2772,6 +2772,141 @@ function PlayersTab() {
   );
 }
 
+/* ─── DAILY RUNDOWN POP-UP ─────────────────────────────────────
+   Greets the user once per day with an AI rundown of today's notable
+   games. Auto-generates on open. X dismisses into the normal app, and
+   it won't show again until the next calendar day (tracked in storage).
+   ──────────────────────────────────────────────────────────────── */
+
+function DailyRundownModal({ liveEvents, onClose }) {
+  const [state, setState] = useState("loading"); // loading | done | error
+  const [text, setText] = useState("");
+  const today = todayKey();
+
+  // Today's notable games — curated + live, importance-sorted
+  const merged = mergeDayEvents(today, liveEvents);
+  const games = merged
+    .slice()
+    .sort((a, b) => (b.verdict || 0) - (a.verdict || 0))
+    .filter(e => (e.verdict || 0) >= 3);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const list = (games.length ? games : merged).slice(0, 12);
+      const brief = list.map(e =>
+        `${e.away ? `${e.away} at ${e.home}` : (e.title || "")} (${e.league}, importance ${e.verdict || 3}/5)${e.time ? ` at ${e.time}` : ""} — ${e.note || e.summary || ""}`
+      ).join("\n");
+
+      const prompt = `You are a friendly sports guide writing for a CASUAL fan who often misses games because they never know the schedule. Below is TODAY's slate of notable games. Write a warm, punchy 2-3 sentence rundown of what's worth watching today and why. Lead with the single biggest can't-miss game. No jargon, no hype clichés, no bullet points (a separate list handles those) — just plain, flowing guidance like a knowledgeable friend texting them. Do not invent any games not listed. If the list is empty, say it's a quiet day with nothing major on.
+
+Today's games:
+${brief || "(no notable games)"}`;
+
+      try {
+        const res = await fetch("/api/claude", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 1000,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+        const data = await res.json();
+        const out = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
+        if (cancelled) return;
+        setText(out || "Here's what's on today.");
+        setState("done");
+      } catch (e) {
+        if (!cancelled) setState("error");
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, []);
+
+  const dotColor = v => v >= 5 ? "#FF5A5A" : v === 4 ? "#FFA94D" : "#6BA4FF";
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(10,16,22,0.55)", backdropFilter: "blur(3px)",
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 18,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: "100%", maxWidth: 440, maxHeight: "85vh", overflowY: "auto",
+          background: "linear-gradient(135deg, #15202B 0%, #243240 100%)",
+          borderRadius: 18, padding: "22px 22px 24px", color: "#fff",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
+          <span style={{ fontSize: 17, marginRight: 8 }}>✦</span>
+          <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.12em", color: "rgba(255,255,255,0.85)" }}>
+            YOUR SPORTS TODAY · {monthName(today).toUpperCase()} {dayNum(today)}
+          </span>
+          <button onClick={onClose} style={{
+            marginLeft: "auto", background: "rgba(255,255,255,0.1)", border: "none",
+            color: "rgba(255,255,255,0.7)", width: 30, height: 30, borderRadius: 8,
+            fontSize: 17, cursor: "pointer", fontFamily: "inherit", lineHeight: 1,
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>×</button>
+        </div>
+
+        {state === "loading" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0 16px" }}>
+            <span style={{ width: 16, height: 16, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
+            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>Catching you up on today…</span>
+          </div>
+        )}
+
+        {state === "error" && (
+          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", lineHeight: 1.6, margin: "0 0 4px" }}>
+            Couldn't load today's rundown right now — but the games are below. Tap the X to jump into the app.
+          </p>
+        )}
+
+        {state === "done" && (
+          <p style={{ fontSize: 15, color: "#fff", lineHeight: 1.7, margin: "0 0 4px", fontWeight: 500 }}>{text}</p>
+        )}
+
+        {(state === "done" || state === "error") && games.length > 0 && (
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.12)" }}>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", color: "rgba(255,255,255,0.5)", marginBottom: 12 }}>
+              TODAY'S GAMES
+            </div>
+            {games.slice(0, 8).map((e, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, marginTop: 5, background: dotColor(e.verdict || 3) }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff" }}>
+                    {SPORT_EMOJI[e.league]} {e.away ? `${e.away} at ${e.home}` : e.title}
+                  </div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 1 }}>
+                    {e.time}{e.channel ? ` · ${e.channel}` : ""}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button onClick={onClose} style={{
+          width: "100%", marginTop: 18, background: "#fff", color: C.ink, border: "none",
+          borderRadius: 10, padding: "12px", fontSize: 14, fontWeight: 800, cursor: "pointer",
+          fontFamily: "inherit",
+        }}>Enter the app →</button>
+      </div>
+    </div>
+  );
+}
+
 /* ─── MAIN ────────────────────────────────────────────────── */
 
 export default function App() {
@@ -2786,6 +2921,10 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const updateAvailable = useUpdateChecker();
+
+  // Daily rundown pop-up: show every time the app opens/reloads.
+  const [showRundown, setShowRundown] = useState(true);
+  const dismissRundown = () => setShowRundown(false);
 
   const flash = m => { setToast(m); setTimeout(() => setToast(null), 2300); };
   const prefChange = (k, v) => setPrefs(p => { const n = { ...p, [k]: v }; save("kyg-prefs-v3", n); return n; });
@@ -2895,6 +3034,10 @@ export default function App() {
         onRefresh={() => window.location.reload()}
         onDismiss={() => setUpdateDismissed(true)}
       />
+
+      {showRundown && (
+        <DailyRundownModal liveEvents={appLiveEvents} onClose={dismissRundown} />
+      )}
 
       <header style={{ background: C.red, position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 10px rgba(200,16,46,0.2)" }}>
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 18px" }}>
