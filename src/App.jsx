@@ -83,7 +83,15 @@ function fixAbbr(a) {
 
 // Convert a BallDontLie ISO-UTC datetime to { dateKey, time } in Central Time.
 function bdlToLocal(iso) {
-  const d = new Date(iso);
+  // Date-only strings (YYYY-MM-DD) must be treated as local noon, not UTC
+  // midnight — UTC midnight shifts the date backward in Central time.
+  let d;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const [y, mo, dy] = iso.split("-").map(Number);
+    d = new Date(y, mo - 1, dy, 12, 0, 0);
+  } else {
+    d = new Date(iso);
+  }
   // dateKey in America/Chicago
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
