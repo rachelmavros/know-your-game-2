@@ -11,7 +11,11 @@ export default async function handler(req) {
   const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
-    return new Response('Supabase not configured', { status: 500 });
+    return new Response(JSON.stringify({
+      error: 'Supabase not configured',
+      hasUrl: !!supabaseUrl,
+      hasKey: !!supabaseKey,
+    }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 
   try {
