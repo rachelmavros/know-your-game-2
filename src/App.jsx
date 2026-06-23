@@ -192,6 +192,32 @@ function mapBdlGame(g, league) {
   };
 }
 
+// Map a BallDontLie MLB game → app event shape. MLB uses a newer schema than
+// WNBA: home_team/away_team (not visitor_team), display_name, *_team_data.runs,
+// and STATUS_* strings.
+function mapMlbGame(g) {
+  const { dateKey, time } = bdlToLocal(g.date);
+  const home = g.home_team || {};
+  const away = g.away_team || {};
+  const homeName = home.display_name || home.full_name || g.home_team_name || "";
+  const awayName = away.display_name || away.full_name || g.away_team_name || "";
+  if (!homeName || !awayName) return {};
+  const { tagline, summary } = describeMatchup(awayName, homeName, "MLB");
+  const st = (g.status || "").toUpperCase();
+  const status = st.includes("FINAL") ? "post"
+    : (st.includes("PROGRESS") || st.includes("IN_")) ? "live"
+    : "upcoming";
+  return {
+    league: "MLB",
+    home: homeName, homeAbbr: fixAbbr(home.abbreviation),
+    away: awayName, awayAbbr: fixAbbr(away.abbreviation),
+    time, dateKey, verdict: 3, status,
+    homeScore: g.home_team_data ? g.home_team_data.runs : null,
+    awayScore: g.away_team_data ? g.away_team_data.runs : null,
+    tagline, summary, note: summary, fromApi: true,
+  };
+}
+
 // Map a BallDontLie FIFA World Cup match → app event shape.
 // The FIFA endpoint uses different field names than WNBA/MLB.
 function mapFifaMatch(g) {
@@ -276,7 +302,7 @@ function useLiveSchedule() {
         });
       };
       add(wnba, "WNBA", mapBdlGame);
-      add(mlb, "MLB", mapBdlGame);
+      add(mlb, "MLB", mapMlbGame);
       add(wc, "WC", mapFifaMatch);
 
       const total = wnba.length + mlb.length + wc.length;

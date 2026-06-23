@@ -11,14 +11,27 @@
 // The Games endpoint is on the FREE tier for every sport. Standings,
 // injuries, and stats are NOT free, so we don't touch those here.
 
+// dateStyle:
+//   "range" → uses start_date / end_date (older WNBA-style API)
+//   "dates" → uses repeated dates[]=YYYY-MM-DD (newer MLB / FIFA-style API,
+//             which ignores start_date/end_date entirely)
 const SPORTS = {
-  wnba: { base: "https://api.balldontlie.io/wnba/v1/games", keyVar: "BDL_WNBA_KEY" },
-  mlb:  { base: "https://api.balldontlie.io/mlb/v1/games",  keyVar: "BDL_MLB_KEY"  },
-  // World Cup matches require the paid GOAT tier ($39.99/mo), so this is not
-  // fetched by the app today — World Cup games are hand-curated. URL kept
-  // correct here in case of a future upgrade. Note: path is /fifa/worldcup/.
-  worldcup: { base: "https://api.balldontlie.io/fifa/worldcup/v1/matches", keyVar: "BDL_FIFA_KEY" },
+  wnba: { base: "https://api.balldontlie.io/wnba/v1/games", keyVar: "BDL_WNBA_KEY", dateStyle: "range" },
+  mlb:  { base: "https://api.balldontlie.io/mlb/v1/games",  keyVar: "BDL_MLB_KEY",  dateStyle: "dates" },
+  worldcup: { base: "https://api.balldontlie.io/fifa/worldcup/v1/matches", keyVar: "BDL_FIFA_KEY", dateStyle: "dates" },
 };
+
+// Expand an inclusive YYYY-MM-DD range into individual date strings.
+function expandDates(start, end) {
+  const out = [];
+  if (!start) return out;
+  const s = new Date(start + "T00:00:00Z");
+  const e = end ? new Date(end + "T00:00:00Z") : s;
+  for (let d = new Date(s); d <= e; d.setUTCDate(d.getUTCDate() + 1)) {
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
 
 export default async function handler(req, res) {
   // Basic CORS / cache headers. Cache for 10 min at the edge so we stay
@@ -40,8 +53,12 @@ export default async function handler(req, res) {
   // Build the upstream URL (with cursor pagination support)
   const buildUrl = cursor => {
     const params = new URLSearchParams();
-    if (start_date) params.set("start_date", start_date);
-    if (end_date) params.set("end_date", end_date);
+    if (cfg.dateStyle === "dates") {
+      for (const d of expandDates(start_date, end_date)) params.append("dates[]", d);
+    } else {
+      if (start_date) params.set("start_date", start_date);
+      if (end_date) params.set("end_date", end_date);
+    }
     params.set("per_page", "100");
     if (cursor != null) params.set("cursor", String(cursor));
     return `${cfg.base}?${params.toString()}`;
