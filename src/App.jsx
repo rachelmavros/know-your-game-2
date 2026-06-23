@@ -3255,6 +3255,16 @@ export default function App() {
     }));
 
   const allToday = [...GAMES, ...curatedWCToday, ...liveExtras];
+
+  // DEBUG — remove after diagnosis
+  const debugInfo = {
+    todayKey: todayK,
+    liveStatus: appLiveStatus,
+    counts,
+    liveEventDates: appLiveEvents ? Object.keys(appLiveEvents).sort() : [],
+    liveExtrasCount: liveExtras.length,
+  };
+
   const visible = allToday.filter(matches);
   let hero = visible.find(g => g.featured && g.dateKey === todayK);
   const live = visible.filter(g => g.status === "live" && g.dateKey === todayK);
@@ -3356,6 +3366,11 @@ export default function App() {
         {tab === "today" && (
           <>
             <WeekRundown />
+            {/* DEBUG BOX — remove after diagnosis */}
+            <div style={{ background: "#f0f0f0", border: "1px solid #ccc", borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 11, fontFamily: "monospace", wordBreak: "break-all" }}>
+              <strong>DEBUG</strong><br />
+              {JSON.stringify(debugInfo, null, 2).split("\n").map((l, i) => <div key={i}>{l}</div>)}
+            </div>
             <FilterBar filters={filters} setFilters={setFilters} />
             {appLiveStatus === "done" && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>
