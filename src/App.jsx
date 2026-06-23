@@ -3367,10 +3367,7 @@ export default function App() {
           <>
             <WeekRundown />
             {/* DEBUG BOX — remove after diagnosis */}
-            <div style={{ background: "#f0f0f0", border: "1px solid #ccc", borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 11, fontFamily: "monospace", wordBreak: "break-all" }}>
-              <strong>DEBUG</strong><br />
-              {JSON.stringify(debugInfo, null, 2).split("\n").map((l, i) => <div key={i}>{l}</div>)}
-            </div>
+            <pre style={{ background: "#f0f0f0", border: "1px solid #ccc", borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 11, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{JSON.stringify(debugInfo, null, 2)}</pre>
             <FilterBar filters={filters} setFilters={setFilters} />
             {appLiveStatus === "done" && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>
