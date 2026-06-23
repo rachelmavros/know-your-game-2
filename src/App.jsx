@@ -1829,12 +1829,16 @@ async function subscribeToPush() {
       auth: json.keys.auth,
     }),
   });
-  if (!res.ok) throw new Error("save-failed");
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error("save-failed: " + res.status + " " + text);
+  }
   return true;
 }
 
 function PushCard() {
   const [state, setState] = useState("loading"); // loading|on|off|working|denied|unsupported|error
+  const [errMsg, setErrMsg] = useState("");
 
   useEffect(() => {
     if (!pushSupported()) { setState("unsupported"); return; }
@@ -1850,6 +1854,7 @@ function PushCard() {
       await subscribeToPush();
       setState("on");
     } catch (e) {
+      setErrMsg(e && e.message ? e.message : String(e));
       setState(e.message === "denied" ? "denied" : "error");
     }
   };
@@ -1876,7 +1881,9 @@ function PushCard() {
             cursor: state === "working" ? "default" : "pointer", fontFamily: "inherit",
           }}>{state === "working" ? "Turning on…" : "Turn on notifications"}</button>
           {state === "error" && (
-            <div style={{ fontSize: 12, color: C.red, marginTop: 10 }}>Something went wrong — please try again.</div>
+            <div style={{ fontSize: 12, color: C.red, marginTop: 10, wordBreak: "break-word" }}>
+              Error: {errMsg || "unknown"}
+            </div>
           )}
         </>
       )}
