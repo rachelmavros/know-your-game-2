@@ -184,6 +184,39 @@ function mapBdlGame(g, league) {
   };
 }
 
+// Map a BallDontLie FIFA World Cup match → app event shape.
+// The FIFA endpoint uses different field names than WNBA/MLB.
+function mapFifaMatch(g) {
+  const dateStr = g.datetime || g.date || g.kickoff || "";
+  if (!dateStr) return {};
+  let dateKey, time;
+  try {
+    ({ dateKey, time } = bdlToLocal(dateStr));
+  } catch {
+    return {};
+  }
+  // FIFA API may use home_team/away_team objects or flat name strings
+  const home = (g.home_team && (g.home_team.name || g.home_team.country)) ||
+               g.home_team_name || g.home || "";
+  const away = (g.away_team && (g.away_team.name || g.away_team.country)) ||
+               g.away_team_name || g.away || "";
+  if (!home || !away) return {};
+  const homeScore = g.home_score ?? g.home_goals ?? null;
+  const awayScore = g.away_score ?? g.away_goals ?? null;
+  return {
+    league: "WC",
+    home, away,
+    homeAbbr: home.slice(0, 3).toUpperCase(),
+    awayAbbr: away.slice(0, 3).toUpperCase(),
+    time, dateKey,
+    verdict: 4,
+    status: g.status,
+    homeScore, awayScore,
+    note: `${away} vs ${home} — World Cup match`,
+    fromApi: true,
+  };
+}
+
 // Fetch a sport's schedule for a date window. Returns [] on any failure.
 async function fetchSchedule(sport, startDate, endDate) {
   try {
@@ -204,46 +237,42 @@ async function fetchSchedule(sport, startDate, endDate) {
 function useLiveSchedule() {
   const [liveEvents, setLiveEvents] = useState(null); // null = not loaded yet
   const [status, setStatus] = useState("idle"); // idle | loading | done | empty
-  const [counts, setCounts] = useState({ wnba: null, mlb: null });
+  const [counts, setCounts] = useState({ wnba: null, mlb: null, worldcup: null });
 
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
       setStatus("loading");
       const today = todayKey();
-      // The free tier returns max 100 games per request with no pagination.
-      // MLB plays ~15 games/day, so a wide past-dated window would use up the
-      // 100-game budget before reaching today. Fetch a tight window per sport:
-      // start at today (yesterday for late-night games) so today is always
-      // inside the first 100 rows. WNBA has far fewer games so it gets more
-      // runway; MLB is kept short on purpose.
       const wnbaStart = addDays(today, -3);
       const wnbaEnd = addDays(today, 21);
       const mlbStart = addDays(today, -1);
       const mlbEnd = addDays(today, 14);
+      const wcStart = addDays(today, -3);
+      const wcEnd = addDays(today, 14);
 
-      // WNBA + MLB are free. World Cup matches are paid-tier only, so those
-      // games stay hand-curated in CAL_EVENTS and aren't fetched here.
-      const [wnba, mlb] = await Promise.all([
+      const [wnba, mlb, wc] = await Promise.all([
         fetchSchedule("wnba", wnbaStart, wnbaEnd),
         fetchSchedule("mlb", mlbStart, mlbEnd),
+        fetchSchedule("worldcup", wcStart, wcEnd),
       ]);
 
       if (cancelled) return;
 
       const grouped = {};
-      const add = (rows, league) => {
+      const add = (rows, league, mapper) => {
         rows.forEach(g => {
-          const ev = mapBdlGame(g, league);
+          const ev = mapper(g, league);
           if (!ev.dateKey) return;
           (grouped[ev.dateKey] = grouped[ev.dateKey] || []).push(ev);
         });
       };
-      add(wnba, "WNBA");
-      add(mlb, "MLB");
+      add(wnba, "WNBA", mapBdlGame);
+      add(mlb, "MLB", mapBdlGame);
+      add(wc, "WC", mapFifaMatch);
 
-      const total = wnba.length + mlb.length;
-      setCounts({ wnba: wnba.length, mlb: mlb.length });
+      const total = wnba.length + mlb.length + wc.length;
+      setCounts({ wnba: wnba.length, mlb: mlb.length, worldcup: wc.length });
       setLiveEvents(grouped);
       setStatus(total > 0 ? "done" : "empty");
     };
