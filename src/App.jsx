@@ -1782,6 +1782,118 @@ function InstallPrompt({ compact }) {
   );
 }
 
+/* ─── PUSH NOTIFICATIONS ──────────────────────────────────── */
+
+// Public VAPID key — safe to ship to the browser. Private key lives in Vercel.
+const VAPID_PUBLIC_KEY = "BDs--PHiB772_AHohQu542PTaBMWzkeAKBpn39D8W0IZ8rDGzyetLYLzCPeSy7TwPWsdh2rSKPociaZvXLlr0Pk";
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+function pushSupported() {
+  return typeof window !== "undefined" &&
+    "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+
+async function getPushSubscription() {
+  if (!pushSupported()) return null;
+  const reg = await navigator.serviceWorker.ready;
+  return reg.pushManager.getSubscription();
+}
+
+async function subscribeToPush() {
+  if (!pushSupported()) throw new Error("unsupported");
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") throw new Error("denied");
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+  }
+  const json = sub.toJSON();
+  const res = await fetch("/api/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      endpoint: json.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+    }),
+  });
+  if (!res.ok) throw new Error("save-failed");
+  return true;
+}
+
+function PushCard() {
+  const [state, setState] = useState("loading"); // loading|on|off|working|denied|unsupported|error
+
+  useEffect(() => {
+    if (!pushSupported()) { setState("unsupported"); return; }
+    if (Notification.permission === "denied") { setState("denied"); return; }
+    getPushSubscription()
+      .then(sub => setState(sub ? "on" : "off"))
+      .catch(() => setState("off"));
+  }, []);
+
+  const enable = async () => {
+    setState("working");
+    try {
+      await subscribeToPush();
+      setState("on");
+    } catch (e) {
+      setState(e.message === "denied" ? "denied" : "error");
+    }
+  };
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "16px 18px", marginBottom: 22 }}>
+      <div style={{ fontSize: 14, fontWeight: 800, color: C.ink, marginBottom: 6 }}>📲 Push notifications</div>
+      {state === "loading" && (
+        <div style={{ fontSize: 12.5, color: C.inkDim }}>Checking…</div>
+      )}
+      {state === "on" && (
+        <div style={{ fontSize: 12.5, color: C.inkMid, lineHeight: 1.55 }}>
+          ✓ You're all set. Each morning you'll get a heads-up about what's worth watching — tap it to open today's rundown.
+        </div>
+      )}
+      {(state === "off" || state === "error" || state === "working") && (
+        <>
+          <div style={{ fontSize: 12.5, color: C.inkMid, lineHeight: 1.55, marginBottom: 12 }}>
+            Get a daily heads-up on your phone about the games worth watching.
+          </div>
+          <button onClick={enable} disabled={state === "working"} style={{
+            background: state === "working" ? C.line : C.red, color: "#fff", border: "none",
+            borderRadius: 9, padding: "11px 18px", fontSize: 13, fontWeight: 800,
+            cursor: state === "working" ? "default" : "pointer", fontFamily: "inherit",
+          }}>{state === "working" ? "Turning on…" : "Turn on notifications"}</button>
+          {state === "error" && (
+            <div style={{ fontSize: 12, color: C.red, marginTop: 10 }}>Something went wrong — please try again.</div>
+          )}
+        </>
+      )}
+      {state === "denied" && (
+        <div style={{ fontSize: 12.5, color: C.inkMid, lineHeight: 1.55 }}>
+          Notifications are blocked for this site. Turn them back on in your browser or phone settings, then refresh.
+        </div>
+      )}
+      {state === "unsupported" && (
+        <div style={{ fontSize: 12.5, color: C.inkMid, lineHeight: 1.55 }}>
+          On iPhone, add this app to your home screen first (steps above), then open it from there to enable notifications.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AlertsTab({ prefs, onPrefChange, gameAlerts, calAlerts }) {
   const rows = [
     { key: "mustWatch", label: "Championship & finals games", desc: "Clinchers and elimination games across all sports." },
@@ -1793,12 +1905,13 @@ function AlertsTab({ prefs, onPrefChange, gameAlerts, calAlerts }) {
   return (
     <div>
       <InstallPrompt />
+      <PushCard />
       <div style={{ background: C.redSoft, border: `1px solid ${C.red}`, borderRadius: 11, padding: "14px 16px", marginBottom: 22 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: C.red, marginBottom: 4 }}>
           {total} alert{total !== 1 ? "s" : ""} set
         </div>
         <div style={{ fontSize: 12, color: C.inkMid, lineHeight: 1.55 }}>
-          When on, you'll get a morning-of digest around 9am and a reminder ~30 minutes before tip-off. Saved to this device for now — sign in to sync across devices and turn on real push notifications.
+          Pick which kinds of games matter to you below. With notifications on, you'll get a morning heads-up about the ones worth watching.
         </div>
       </div>
       <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", color: C.inkFaint, marginBottom: 12 }}>NOTIFY ME WHEN</div>
