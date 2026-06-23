@@ -2820,10 +2820,13 @@ function FeedbackTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind, message: msg }),
       });
-      if (!res.ok) throw new Error("Failed to send");
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to send");
+      }
       setSent(true);
     } catch (e) {
-      setError("Something went wrong — please try again.");
+      setError("Error: " + e.message);
     } finally {
       setSending(false);
     }
