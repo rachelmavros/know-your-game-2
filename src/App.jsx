@@ -2808,16 +2808,25 @@ function FeedbackTab() {
   const [kind, setKind] = useState("Idea / feature");
   const [msg, setMsg] = useState("");
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState(null);
 
-  // No backend yet — feedback opens a pre-filled email to the developer.
-  // Swap this address for your real one.
-  const DEV_EMAIL = "your-email@example.com";
-
-  const submit = () => {
-    const subject = encodeURIComponent(`[Know Your Game] ${kind}`);
-    const body = encodeURIComponent(msg || "");
-    window.location.href = `mailto:${DEV_EMAIL}?subject=${subject}&body=${body}`;
-    setSent(true);
+  const submit = async () => {
+    setSending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, message: msg }),
+      });
+      if (!res.ok) throw new Error("Failed to send");
+      setSent(true);
+    } catch (e) {
+      setError("Something went wrong — please try again.");
+    } finally {
+      setSending(false);
+    }
   };
 
   const kinds = ["Idea / feature", "Incorrect info", "Bug / something broke", "Just saying hi"];
@@ -2858,15 +2867,20 @@ function FeedbackTab() {
         }}
       />
 
-      <button onClick={submit} disabled={!msg.trim()} style={{
-        width: "100%", background: msg.trim() ? C.red : C.line, color: "#fff", border: "none",
+      <button onClick={submit} disabled={!msg.trim() || sending} style={{
+        width: "100%", background: msg.trim() && !sending ? C.red : C.line, color: "#fff", border: "none",
         borderRadius: 10, padding: "13px", fontSize: 14, fontWeight: 800,
-        cursor: msg.trim() ? "pointer" : "default", fontFamily: "inherit",
-      }}>Send feedback →</button>
+        cursor: msg.trim() && !sending ? "pointer" : "default", fontFamily: "inherit",
+      }}>{sending ? "Sending…" : "Send feedback →"}</button>
 
       {sent && (
         <p style={{ fontSize: 13, color: C.inkMid, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>
-          Your email app should have opened with your message ready to send. Thanks for helping make the app better!
+          Got it — thanks for helping make the app better! 🙏
+        </p>
+      )}
+      {error && (
+        <p style={{ fontSize: 13, color: C.red, textAlign: "center", marginTop: 14 }}>
+          {error}
         </p>
       )}
     </div>
