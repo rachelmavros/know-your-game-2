@@ -3186,6 +3186,83 @@ function PlayersTab() {
 
 /* ─── FEEDBACK ─────────────────────────────────────────────── */
 
+/* ─── ADMIN: FEEDBACK VIEWER ──────────────────────────────── */
+// Hidden page reached at /?admin — password-gated list of all feedback.
+function AdminFeedback() {
+  const [key, setKey] = useState(() => load("kyg-admin-key", ""));
+  const [input, setInput] = useState("");
+  const [rows, setRows] = useState(null);
+  const [state, setState] = useState("idle"); // idle|loading|ok|denied|error
+  const [err, setErr] = useState("");
+
+  const fetchFeedback = async (k) => {
+    setState("loading");
+    setErr("");
+    try {
+      const res = await fetch(`/api/feedback-list?key=${encodeURIComponent(k)}`);
+      if (res.status === 401) { setState("denied"); return; }
+      if (!res.ok) { setErr(await res.text().catch(() => "")); setState("error"); return; }
+      const j = await res.json();
+      setRows(j.data || []);
+      save("kyg-admin-key", k);
+      setKey(k);
+      setState("ok");
+    } catch (e) {
+      setErr(String(e)); setState("error");
+    }
+  };
+
+  useEffect(() => { if (key) fetchFeedback(key); /* eslint-disable-next-line */ }, []);
+
+  const fmt = iso => { try { return new Date(iso).toLocaleString("en-US", { timeZone: "America/Chicago" }); } catch { return iso; } };
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, color: C.ink, fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif" }}>
+      <div style={{ maxWidth: 680, margin: "0 auto", padding: "28px 18px 80px" }}>
+        <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 4 }}>📬 Feedback</div>
+        <div style={{ fontSize: 13, color: C.inkDim, marginBottom: 20 }}>Admin view — all submissions, newest first.</div>
+
+        {state !== "ok" && (
+          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: 18, maxWidth: 360 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: C.inkFaint, letterSpacing: "0.06em", marginBottom: 8 }}>ADMIN PASSWORD</div>
+            <input type="password" value={input} onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && fetchFeedback(input)}
+              placeholder="Enter password"
+              style={{ width: "100%", padding: "11px 14px", borderRadius: 9, border: `1px solid ${C.line}`, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", marginBottom: 12 }} />
+            <button onClick={() => fetchFeedback(input)} disabled={state === "loading" || !input} style={{
+              width: "100%", background: input ? C.red : C.line, color: "#fff", border: "none",
+              borderRadius: 9, padding: "11px", fontSize: 14, fontWeight: 800,
+              cursor: input ? "pointer" : "default", fontFamily: "inherit",
+            }}>{state === "loading" ? "Checking…" : "View feedback"}</button>
+            {state === "denied" && <div style={{ fontSize: 12.5, color: C.red, marginTop: 10 }}>Wrong password.</div>}
+            {state === "error" && <div style={{ fontSize: 12.5, color: C.red, marginTop: 10, wordBreak: "break-word" }}>Error: {err || "unknown"}</div>}
+          </div>
+        )}
+
+        {state === "ok" && rows && (
+          <>
+            <div style={{ fontSize: 12, color: C.inkFaint, marginBottom: 14 }}>{rows.length} submission{rows.length !== 1 ? "s" : ""}</div>
+            {rows.length === 0 && <div style={{ color: C.inkDim, fontSize: 14 }}>No feedback yet.</div>}
+            {rows.map((r, i) => (
+              <div key={r.id || i} style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 11, padding: "14px 16px", marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: C.red, background: C.redSoft, borderRadius: 999, padding: "3px 10px" }}>{r.kind || "—"}</span>
+                  <span style={{ fontSize: 11, color: C.inkFaint }}>{fmt(r.created_at)}</span>
+                </div>
+                <div style={{ fontSize: 14, color: C.ink, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{r.message}</div>
+              </div>
+            ))}
+            <button onClick={() => { save("kyg-admin-key", ""); setKey(""); setRows(null); setState("idle"); setInput(""); }} style={{
+              background: "none", border: "none", color: C.inkFaint, cursor: "pointer",
+              fontSize: 12, fontWeight: 700, fontFamily: "inherit", padding: "8px 0", marginTop: 4,
+            }}>Sign out</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function FeedbackTab() {
   const [kind, setKind] = useState("Idea / feature");
   const [msg, setMsg] = useState("");
@@ -3422,6 +3499,9 @@ export default function App() {
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const updateAvailable = useUpdateChecker();
 
+  // Hidden admin feedback viewer at /?admin
+  const adminMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("admin");
+
   // Deep link from a push notification: /?league=&home=&away= opens that game.
   const [focusGame, setFocusGame] = useState(() => {
     if (typeof window === "undefined") return null;
@@ -3534,6 +3614,8 @@ export default function App() {
     { id: "edit", label: "Follow ★" },
     { id: "feedback", label: "Feedback" },
   ];
+
+  if (adminMode) return <AdminFeedback />;
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, color: C.ink, fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif" }}>
