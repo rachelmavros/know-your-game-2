@@ -305,8 +305,26 @@ function useLiveSchedule() {
       add(mlb, "MLB", mapMlbGame);
       add(wc, "WC", mapFifaMatch);
 
-      const total = wnba.length + mlb.length + wc.length;
-      setCounts({ wnba: wnba.length, mlb: mlb.length, worldcup: wc.length });
+      // Auto-refreshed World Cup slate (cached in Supabase; live feed is paywalled).
+      let wcCache = [];
+      try {
+        const wcRes = await fetch("/api/worldcup");
+        const wcJson = await wcRes.json();
+        wcCache = Array.isArray(wcJson.data) ? wcJson.data : [];
+      } catch { /* fall back to curated CAL_EVENTS */ }
+      if (!cancelled) {
+        wcCache.forEach(g => {
+          if (!g.date || !g.home || !g.away) return;
+          (grouped[g.date] = grouped[g.date] || []).push({
+            league: "WC", dateKey: g.date, away: g.away, home: g.home,
+            time: g.time || "", verdict: g.verdict || 3, channel: g.channel || "Fox",
+            note: g.note || "", fromApi: true,
+          });
+        });
+      }
+
+      const total = wnba.length + mlb.length + wc.length + wcCache.length;
+      setCounts({ wnba: wnba.length, mlb: mlb.length, worldcup: wc.length + wcCache.length });
       setLiveEvents(grouped);
       setStatus(total > 0 ? "done" : "empty");
     };
@@ -3540,25 +3558,9 @@ export default function App() {
 
   // Curated games for today (with verdicts, blurbs, featured flags)
   const curatedToday = GAMES.filter(g => g.dateKey === todayK);
-  const curatedKeys = new Set(curatedToday.map(g => `${g.league}:${g.homeAbbr || g.home}:${g.awayAbbr || g.away}`));
 
-  // Live games not already covered by a curated entry → fill the slate
-  const liveExtras = liveToday
-    .filter(e => !curatedKeys.has(`${e.league}:${e.homeAbbr || e.home}:${e.awayAbbr || e.away}`))
-    .map(e => ({
-      id: `live-${e.league}-${e.homeAbbr}-${e.awayAbbr}`,
-      league: e.league, city: e.home, // city best-effort
-      home: e.home, homeAbbr: e.homeAbbr, away: e.away, awayAbbr: e.awayAbbr,
-      time: e.time, day: "Today", dateKey: e.dateKey,
-      status: "upcoming", verdict: e.verdict || 3,
-      tagline: e.tagline || "", summary: e.summary || e.note || "",
-      channel: "", channelUrl: "",
-      fromApi: true,
-    }));
-
-  // Build the Today sections from curated + live, then filter
-  // Curated World Cup games for today come from CAL_EVENTS (WC is paid-tier
-  // on the API, so it's hand-maintained). Convert to the Today game shape.
+  // Curated World Cup games for today from CAL_EVENTS — a fallback for dates the
+  // auto-refreshed WC cache hasn't covered. Converted to the Today game shape.
   const curatedWCToday = (CAL_EVENTS[todayK] || [])
     .filter(e => e.league === "WC")
     .map(e => ({
@@ -3569,6 +3571,26 @@ export default function App() {
       status: "upcoming", verdict: e.verdict || 3,
       tagline: `${e.away} vs ${e.home} · World Cup`, summary: e.note || "",
       channel: e.channel || "", channelUrl: "",
+    }));
+
+  // Keys already represented by a curated entry (so live/cached data doesn't double them).
+  const curatedKeys = new Set([
+    ...curatedToday.map(g => `${g.league}:${g.homeAbbr || g.home}:${g.awayAbbr || g.away}`),
+    ...curatedWCToday.map(g => `${g.league}:${g.home}:${g.away}`),
+  ]);
+
+  // Live + cached games not already covered by a curated entry → fill the slate
+  const liveExtras = liveToday
+    .filter(e => !curatedKeys.has(`${e.league}:${e.homeAbbr || e.home}:${e.awayAbbr || e.away}`))
+    .map(e => ({
+      id: `live-${e.league}-${e.homeAbbr || e.home}-${e.awayAbbr || e.away}`,
+      league: e.league, city: e.home, // city best-effort
+      home: e.home, homeAbbr: e.homeAbbr, away: e.away, awayAbbr: e.awayAbbr,
+      time: e.time, day: "Today", dateKey: e.dateKey,
+      status: "upcoming", verdict: e.verdict || 3,
+      tagline: e.tagline || "", summary: e.summary || e.note || "",
+      channel: "", channelUrl: "",
+      fromApi: true,
     }));
 
   const allToday = [...GAMES, ...curatedWCToday, ...liveExtras];

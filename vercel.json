@@ -3,6 +3,7 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "crons": [
+    { "path": "/api/refresh-worldcup", "schedule": "0 12 * * *" },
     { "path": "/api/notify", "schedule": "0 14 * * *" }
   ]
 }
