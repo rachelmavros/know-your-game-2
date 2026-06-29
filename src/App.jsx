@@ -1159,10 +1159,47 @@ function Toggle({ on, onChange }) {
   );
 }
 
+// Default ways to watch per league (used when a game has no specific channel,
+// e.g. live API games). Real, clickable streaming/broadcast links.
+const LEAGUE_WATCH = {
+  WNBA: [
+    { name: "League Pass", url: "https://www.wnba.com/leaguepass" },
+    { name: "ESPN", url: "https://www.espn.com/watch/" },
+    { name: "Prime Video", url: "https://www.amazon.com/gp/video/storefront" },
+  ],
+  MLB: [
+    { name: "MLB.TV", url: "https://www.mlb.com/tv" },
+    { name: "ESPN", url: "https://www.espn.com/watch/" },
+    { name: "Apple TV+", url: "https://tv.apple.com" },
+  ],
+  WC: [
+    { name: "Fox Sports", url: "https://www.foxsports.com/live" },
+    { name: "Telemundo", url: "https://www.telemundo.com/now" },
+    { name: "Fubo", url: "https://www.fubo.tv" },
+  ],
+  NBA: [
+    { name: "League Pass", url: "https://www.nba.com/watch" },
+    { name: "ESPN", url: "https://www.espn.com/watch/" },
+  ],
+};
+
+// Build the list of clickable watch options for a game, with sensible fallbacks.
+function getWatchOptions(game) {
+  if (game.watchAll && game.watchAll.length) return game.watchAll;
+  const defs = LEAGUE_WATCH[game.league] || [];
+  // A specific channel WITH a working link leads the list.
+  if (game.channel && game.channelUrl) {
+    return [{ name: game.channel, url: game.channelUrl }, ...defs.filter(o => o.name !== game.channel)];
+  }
+  if (defs.length) return defs;
+  // Last resort: a search so the button always goes somewhere useful.
+  return [{ name: "Find a stream", url: `https://www.google.com/search?q=${encodeURIComponent(`${game.away || ""} vs ${game.home || ""} live`)}` }];
+}
+
 // Watch options: shows the primary channel + a "see all" expander when there are several.
 function WatchOptions({ game, color, big }) {
   const [open, setOpen] = useState(false);
-  const all = game.watchAll || [{ name: game.channel, url: game.channelUrl }];
+  const all = getWatchOptions(game);
   const primary = all[0];
   const extra = all.slice(1);
   const pad = big ? "10px 18px" : "7px 14px";
@@ -1285,6 +1322,39 @@ function FilterBar({ filters, setFilters }) {
   );
 }
 
+/* ─── EXPANDABLE "OTHER GAME" ROW ─────────────────────────── */
+// Condensed one-liner that unfolds into the full game card when tapped.
+function ExpandableOtherGame({ game, alertOn, onAlert, first }) {
+  const [open, setOpen] = useState(false);
+  const topBorder = first ? "none" : `1px solid ${C.lineSoft}`;
+
+  if (open) {
+    return (
+      <div style={{ borderTop: topBorder, padding: "12px 12px 2px", background: C.bg }}>
+        <GameCard game={game} alertOn={alertOn} onAlert={onAlert} />
+        <button onClick={() => setOpen(false)} style={{
+          background: "none", border: "none", color: C.inkFaint, cursor: "pointer",
+          fontSize: 12, fontWeight: 700, fontFamily: "inherit", padding: "2px 4px 10px",
+        }}>▴ Show less</button>
+      </div>
+    );
+  }
+
+  return (
+    <div onClick={() => setOpen(true)} style={{
+      display: "flex", alignItems: "center", gap: 10, padding: "11px 14px",
+      borderTop: topBorder, cursor: "pointer",
+    }}>
+      <span style={{ fontSize: 8, fontWeight: 800, color: "#fff", background: LEAGUE_COLORS[game.league], borderRadius: 3, padding: "2px 5px", flexShrink: 0 }}>{game.league}</span>
+      <span style={{ fontSize: 13, color: C.inkMid, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {game.away} at {game.home}
+      </span>
+      <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{game.time}</span>
+      <span style={{ fontSize: 13, color: C.inkFaint, flexShrink: 0 }}>›</span>
+    </div>
+  );
+}
+
 /* ─── HERO ────────────────────────────────────────────────── */
 
 function HeroCard({ game, alertOn, onAlert }) {
@@ -1388,6 +1458,82 @@ function GameCard({ game, alertOn, onAlert }) {
 }
 
 /* ─── CALENDAR ────────────────────────────────────────────── */
+
+// One full day-detail game card (used directly for notable games and inside
+// the expandable rows for everything else).
+function CalGameCard({ e, aid, alerts, onAlert }) {
+  const lc = LEAGUE_COLORS[e.league];
+  const hasMatchup = e.away && e.home;
+  return (
+    <div style={{
+      background: C.surface, border: `1px solid ${C.line}`,
+      borderLeft: `4px solid ${e.verdict >= 5 ? C.red : lc}`,
+      borderRadius: 10, padding: "15px 16px", marginBottom: 8,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <LeaguePill league={e.league} small />
+        <span style={{ fontSize: 11, color: C.inkDim, fontWeight: 600 }}>{e.time}</span>
+        <span style={{ marginLeft: "auto" }}><VerdictChip level={e.verdict} /></span>
+      </div>
+
+      {hasMatchup ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6, flexWrap: "wrap" }}>
+          <TeamLogo team={e.away} size={22} />
+          <span style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{e.away}</span>
+          <span style={{ color: C.inkFaint, fontSize: 12 }}>at</span>
+          <TeamLogo team={e.home} size={22} />
+          <span style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{e.home}</span>
+        </div>
+      ) : (
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.ink, marginBottom: 6 }}>{e.title}</div>
+      )}
+
+      {e.note && <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, margin: "0 0 12px" }}>{e.note}</p>}
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <WatchOptions game={e} color={lc} />
+        <button onClick={() => onAlert(aid)} style={{
+          display: "inline-flex", alignItems: "center", gap: 5,
+          background: alerts.includes(aid) ? C.redSoft : C.surface,
+          color: alerts.includes(aid) ? C.red : C.inkDim,
+          border: `1px solid ${alerts.includes(aid) ? C.red : C.line}`,
+          padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+        }}>{alerts.includes(aid) ? "🔔 Alert set" : "🔕 Alert me"}</button>
+      </div>
+    </div>
+  );
+}
+
+// Condensed calendar row that unfolds into the full day-detail card.
+function ExpandableCalGame({ e, aid, alerts, onAlert, first }) {
+  const [open, setOpen] = useState(false);
+  const topBorder = first ? "none" : `1px solid ${C.lineSoft}`;
+  if (open) {
+    return (
+      <div style={{ borderTop: topBorder, padding: "12px 12px 2px", background: C.bg }}>
+        <CalGameCard e={e} aid={aid} alerts={alerts} onAlert={onAlert} />
+        <button onClick={() => setOpen(false)} style={{
+          background: "none", border: "none", color: C.inkFaint, cursor: "pointer",
+          fontSize: 12, fontWeight: 700, fontFamily: "inherit", padding: "2px 4px 10px",
+        }}>▴ Show less</button>
+      </div>
+    );
+  }
+  const label = e.away && e.home ? `${e.away} at ${e.home}` : e.title;
+  return (
+    <div onClick={() => setOpen(true)} style={{
+      display: "flex", alignItems: "center", gap: 10, padding: "11px 14px",
+      borderTop: topBorder, cursor: "pointer",
+    }}>
+      <span style={{ fontSize: 8, fontWeight: 800, color: "#fff", background: LEAGUE_COLORS[e.league], borderRadius: 3, padding: "2px 5px", flexShrink: 0 }}>{e.league}</span>
+      <span style={{ fontSize: 13, color: C.inkMid, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {label}
+      </span>
+      <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{e.time}</span>
+      <span style={{ fontSize: 13, color: C.inkFaint, flexShrink: 0 }}>›</span>
+    </div>
+  );
+}
 
 function CalendarTab({ alerts, onAlert }) {
   const [view, setView] = useState("month");
@@ -1567,84 +1713,56 @@ function CalendarTab({ alerts, onAlert }) {
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", color: C.inkFaint, marginBottom: 12 }}>
           {selected === today ? "● TODAY" : "GAMES"} · {monthName(selected).toUpperCase()} {selDayNum}
         </div>
-        {dayEvents.length === 0 ? (
-          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 24, textAlign: "center", color: C.inkDim, fontSize: 14 }}>
-            No notable games this day. Tap a highlighted date to see what's on.
-          </div>
-        ) : (
-          dayEvents.map((e, i) => {
-            const aid = selected + "-" + i;
-            const lc = LEAGUE_COLORS[e.league];
-            const hasMatchup = e.away && e.home;
+        {(() => {
+          const isNotable = e => e.verdict >= 4 || (!e.fromApi && e.verdict >= 3);
+          const notable = dayEvents.filter(isNotable);
+          const others = dayEvents.filter(e => !isNotable(e));
+          const extraRows = filterEvents(DAY_OTHER_GAMES[selected] || []);
+          const aidFor = e => selected + "-" + e.league + "-" + (e.home || e.title || "");
+
+          if (dayEvents.length === 0 && extraRows.length === 0) {
             return (
-              <div key={i} style={{
-                background: C.surface, border: `1px solid ${C.line}`,
-                borderLeft: `4px solid ${e.verdict >= 5 ? C.red : lc}`,
-                borderRadius: 10, padding: "15px 16px", marginBottom: 8,
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                  <LeaguePill league={e.league} small />
-                  <span style={{ fontSize: 11, color: C.inkDim, fontWeight: 600 }}>{e.time}</span>
-                  <span style={{ marginLeft: "auto" }}><VerdictChip level={e.verdict} /></span>
-                </div>
-
-                {hasMatchup ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6, flexWrap: "wrap" }}>
-                    <TeamLogo team={e.away} size={22} />
-                    <span style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{e.away}</span>
-                    <span style={{ color: C.inkFaint, fontSize: 12 }}>at</span>
-                    <TeamLogo team={e.home} size={22} />
-                    <span style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{e.home}</span>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 17, fontWeight: 800, color: C.ink, marginBottom: 6 }}>{e.title}</div>
-                )}
-
-                <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, margin: "0 0 12px" }}>{e.note}</p>
-
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <span style={{
-                    display: "inline-flex", alignItems: "center", gap: 5, background: C.lineSoft,
-                    color: C.inkMid, padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600,
-                  }}>📺 {e.channel}</span>
-                  <button onClick={() => onAlert(aid)} style={{
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                    background: alerts.includes(aid) ? C.redSoft : C.surface,
-                    color: alerts.includes(aid) ? C.red : C.inkDim,
-                    border: `1px solid ${alerts.includes(aid) ? C.red : C.line}`,
-                    padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit",
-                  }}>{alerts.includes(aid) ? "🔔 Alert set" : "🔕 Alert me"}</button>
-                </div>
+              <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 24, textAlign: "center", color: C.inkDim, fontSize: 14 }}>
+                No games scheduled this day. Tap a highlighted date to see what's on.
               </div>
             );
-          })
-        )}
+          }
 
-        {/* Everything else this day — condensed grey rows (respects sport filter) */}
-        {(() => {
-          const others = filterEvents(DAY_OTHER_GAMES[selected] || []);
-          if (others.length === 0) return null;
           return (
-            <div style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 8 }}>
-                EVERYTHING ELSE ON {monthName(selected).toUpperCase()} {selDayNum}
-              </div>
-              <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
-                {others.map((g, i) => (
-                  <div key={i} style={{
-                    display: "flex", alignItems: "center", gap: 9, padding: "10px 14px",
-                    borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}`,
-                  }}>
-                    <span style={{ fontSize: 8, fontWeight: 800, color: "#fff", background: LEAGUE_COLORS[g.league], borderRadius: 3, padding: "2px 5px", flexShrink: 0 }}>{g.league}</span>
-                    <TeamLogo team={g.away} size={18} />
-                    <span style={{ fontSize: 12, color: C.inkMid, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {g.away} at {g.home}
-                    </span>
-                    <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{g.time}</span>
+            <>
+              {notable.map((e, i) => (
+                <CalGameCard key={"n" + i} e={e} aid={aidFor(e)} alerts={alerts} onAlert={onAlert} />
+              ))}
+
+              {(others.length > 0 || extraRows.length > 0) && (
+                <div style={{ marginTop: notable.length ? 16 : 0 }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 8 }}>
+                    EVERY OTHER GAME · {monthName(selected).toUpperCase()} {selDayNum}
                   </div>
-                ))}
-              </div>
-            </div>
+                  <div style={{ fontSize: 12, color: C.inkFaint, marginBottom: 10 }}>
+                    Tap any game to see details and where to watch.
+                  </div>
+                  <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+                    {others.map((e, i) => (
+                      <ExpandableCalGame key={"o" + i} e={e} aid={aidFor(e)} alerts={alerts} onAlert={onAlert} first={i === 0} />
+                    ))}
+                    {extraRows.map((g, i) => (
+                      <div key={"x" + i} style={{
+                        display: "flex", alignItems: "center", gap: 9, padding: "10px 14px",
+                        borderTop: (others.length === 0 && i === 0) ? "none" : `1px solid ${C.lineSoft}`,
+                      }}>
+                        <span style={{ fontSize: 8, fontWeight: 800, color: "#fff", background: LEAGUE_COLORS[g.league], borderRadius: 3, padding: "2px 5px", flexShrink: 0 }}>{g.league}</span>
+                        <TeamLogo team={g.away} size={18} />
+                        <span style={{ fontSize: 12, color: C.inkMid, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {g.away} at {g.home}
+                        </span>
+                        <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{g.time}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           );
         })()}
       </div>
@@ -2229,10 +2347,7 @@ ${brief}`;
             </div>
             {week.map((e, i) => (
               <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 9 }}>
-                <span style={{
-                  width: 7, height: 7, borderRadius: "50%", flexShrink: 0, marginTop: 5,
-                  background: e.verdict >= 5 ? "#FF5A5A" : e.verdict === 4 ? "#FFA94D" : "#6BA4FF",
-                }} />
+                <span style={{ flexShrink: 0, fontSize: 15, lineHeight: 1.5 }}>{SPORT_EMOJI[e.league] || "•"}</span>
                 <div style={{ fontSize: 13, lineHeight: 1.5 }}>
                   <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 700 }}>{dayName(e.d)} · {e.time}</span>
                   <span style={{ color: "#fff", fontWeight: 600 }}> — {e.away ? `${e.away} at ${e.home}` : e.title}</span>
@@ -3312,14 +3427,12 @@ export default function App() {
     hero = candidates[0] || null;
   }
   const restPool = visible.filter(g => g.dateKey === todayK && g !== hero && g.status !== "live");
-  const rest = restPool.filter(g => g.verdict >= 3).sort((a,b)=>b.verdict-a.verdict);
-
-  // The full remaining slate — condensed grey one-liners (lower-stakes games)
-  const otherMatches = g =>
-    (filters.sport === "ALL" || g.league === filters.sport) &&
-    (filters.team === "ALL" || g.home === filters.team || g.away === filters.team) &&
-    (filters.city === "ALL" || g.city === filters.city);
-  const otherGames = restPool.filter(g => g.verdict <= 2).filter(otherMatches);
+  // "Notable" = curated highlights (real blurbs) or any high-importance game.
+  // Everything else (filler live games, low-stakes) goes to the condensed,
+  // expandable "every other game" section so every game is still accounted for.
+  const isNotable = g => g.verdict >= 4 || (!g.fromApi && g.verdict >= 3);
+  const rest = restPool.filter(isNotable).sort((a,b)=>b.verdict-a.verdict);
+  const otherGames = restPool.filter(g => !isNotable(g)).sort((a,b)=>b.verdict-a.verdict);
 
   const starCount = (stars.leagues?.length||0) + (stars.teams?.length||0);
   const alertCount = gameAlerts.length + calAlerts.length;
@@ -3423,28 +3536,19 @@ export default function App() {
                 )}
             </div>
 
-            {/* Everything else — condensed grey one-liners */}
+            {/* Every other game today — condensed, tap any row to expand */}
             {otherGames.length > 0 && (
               <div style={{ marginTop: 24 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", color: C.inkFaint, marginBottom: 4 }}>
-                  EVERYTHING ELSE ON
+                  EVERY OTHER GAME TODAY
                 </div>
                 <div style={{ fontSize: 12, color: C.inkFaint, marginBottom: 12 }}>
-                  The rest of the slate — lower-stakes games, so you don't miss your team.
+                  The full slate — tap any game to see details and where to watch.
                 </div>
                 <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
                   {otherGames.map((g, i) => (
-                    <a key={g.id} href={g.channelUrl} target="_blank" rel="noopener noreferrer" style={{
-                      display: "flex", alignItems: "center", gap: 10, padding: "11px 14px",
-                      borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}`, textDecoration: "none",
-                    }}>
-                      <span style={{ fontSize: 8, fontWeight: 800, color: "#fff", background: LEAGUE_COLORS[g.league], borderRadius: 3, padding: "2px 5px", flexShrink: 0 }}>{g.league}</span>
-                      <span style={{ fontSize: 13, color: C.inkMid, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {g.away} at {g.home}
-                      </span>
-                      <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{g.time}</span>
-                      <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>›</span>
-                    </a>
+                    <ExpandableOtherGame key={g.id} game={g} first={i === 0}
+                      alertOn={gameAlerts.includes(g.id)} onAlert={toggleGameAlert} />
                   ))}
                 </div>
               </div>
