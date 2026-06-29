@@ -37,13 +37,23 @@ Use your best knowledge of the actual tournament stage and fixtures for these da
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2000, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 3000,
+        system: 'You output only raw JSON. Never include prose, explanations, apologies, or markdown code fences.',
+        messages: [
+          { role: 'user', content: prompt },
+          { role: 'assistant', content: '[' }, // prefill forces a JSON array, no hedging
+        ],
+      }),
     });
     const data = await r.json();
-    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-    const start = text.indexOf('['); const last = text.lastIndexOf(']');
-    if (start === -1 || last === -1) throw new Error('No JSON array in response');
-    arr = JSON.parse(text.slice(start, last + 1));
+    const raw = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    // We prefilled "[", so prepend it and parse up to the last closing bracket.
+    const text = '[' + raw;
+    const last = text.lastIndexOf(']');
+    if (last === -1) throw new Error('No JSON array — API said: ' + JSON.stringify(data).slice(0, 300));
+    arr = JSON.parse(text.slice(0, last + 1));
     if (!Array.isArray(arr)) throw new Error('Parsed value is not an array');
     // Keep only well-formed rows, tag league + source.
     arr = arr
