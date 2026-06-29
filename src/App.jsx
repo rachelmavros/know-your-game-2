@@ -114,10 +114,10 @@ const TEAM_NOTES = {
   "Las Vegas Aces": "perennial title contenders led by A'ja Wilson",
   "Minnesota Lynx": "one of the league's best teams this season",
   "Connecticut Sun": "rebuilding after losing key veterans",
-  "Chicago Sky": "Angel Reese's team, fighting for a playoff spot",
+  "Chicago Sky": "a young Chicago team fighting for a playoff spot",
   "Phoenix Mercury": "a veteran group in the playoff hunt",
   "Seattle Storm": "a steady playoff team out West",
-  "Atlanta Dream": "a young team on the rise in the East",
+  "Atlanta Dream": "Angel Reese's team, a young squad on the rise in the East",
   "Los Angeles Sparks": "a storied franchise rebuilding its core",
   "Washington Mystics": "in a rebuilding year",
   "Dallas Wings": "building around young talent",
@@ -560,6 +560,23 @@ const CAL_EVENTS = {
     { league: "WC",   away: "Ecuador", home: "Germany", time: "4:00 PM CT", verdict: 4, channel: "Fox", note: "Germany — four-time world champions — face a physical Ecuador team in a group-stage decider that could shape the knockout bracket." },
     { league: "WC",   away: "Turkiye", home: "USA", time: "10:00 PM CT", verdict: 5, channel: "Fox", note: "🇺🇸 The USA's final group game on home soil — the biggest match for American fans this tournament, with the host nation fighting to advance." },
   ],
+  // ── Round of 32 (knockout stage) — refreshed for the week of June 29, 2026.
+  // Times converted from the ET broadcast schedule to Central (ET − 1 hr).
+  "2026-06-29": [
+    { league: "WC",   away: "Japan", home: "Brazil", time: "12:00 PM CT", verdict: 5, channel: "Fox", note: "Knockout round of 32 — five-time champions Brazil face a sharp, well-drilled Japan side in Houston. Brazil's attacking firepower makes them must-watch." },
+    { league: "WC",   away: "Paraguay", home: "Germany", time: "3:30 PM CT", verdict: 4, channel: "FS1", note: "Four-time champions Germany meet a resilient Paraguay in Boston, with a quarterfinal spot on the line." },
+    { league: "WC",   away: "Morocco", home: "Netherlands", time: "8:00 PM CT", verdict: 4, channel: "Fox", note: "A rematch of a famous upset — the Netherlands take on Morocco, the side that stunned the world in 2022, in Monterrey." },
+  ],
+  "2026-06-30": [
+    { league: "WC",   away: "Norway", home: "Ivory Coast", time: "12:00 PM CT", verdict: 3, channel: "FS1", note: "Round of 32 — an athletic Ivory Coast against a Norway side back on the big stage, in Dallas." },
+    { league: "WC",   away: "Sweden", home: "France", time: "4:00 PM CT", verdict: 4, channel: "Fox", note: "France — a tournament favorite with Kylian Mbappé — take on a stubborn Sweden at MetLife Stadium." },
+    { league: "WC",   away: "Ecuador", home: "Mexico", time: "8:00 PM CT", verdict: 5, channel: "Fox", note: "Co-hosts Mexico play a knockout game in front of a roaring crowd at the iconic Estadio Azteca — a huge national moment." },
+  ],
+  "2026-07-01": [
+    { league: "WC",   away: "Congo", home: "England", time: "11:00 AM CT", verdict: 4, channel: "FS1", note: "England, chasing a first title since 1966, are heavily favored against debutants Congo in Atlanta." },
+    { league: "WC",   away: "Senegal", home: "Belgium", time: "3:00 PM CT", verdict: 3, channel: "Fox", note: "A heavyweight clash — Belgium's golden generation against a powerful Senegal in Seattle." },
+    { league: "WC",   away: "Bosnia and Herzegovina", home: "USA", time: "7:00 PM CT", verdict: 5, channel: "Fox", note: "🇺🇸 The USMNT's knockout game on home soil in the Bay Area — the biggest match of the tournament for American fans." },
+  ],
 };
 
 // Season-context used by the AI rundown and the Sports 101 tab
@@ -876,7 +893,7 @@ const PLAYERS = {
         stats: [["PPG", "20.4"], ["RPG", "8.5"], ["APG", "3.8"]],
         facts: ["Won 4 straight NCAA titles at UConn.", "Two-time WNBA champion and two-time Finals MVP.", "Olympic gold medalist."],
         link: "https://en.wikipedia.org/wiki/Breanna_Stewart" },
-      { name: "Angel Reese", team: "Chicago Sky", pos: "Forward", debut: 2024, note: "A rebounding machine and one of the league's most magnetic personalities — Clark's college rival turned pro rival.",
+      { name: "Angel Reese", team: "Atlanta Dream", pos: "Forward", debut: 2024, note: "A rebounding machine and one of the league's most magnetic personalities — Clark's college rival turned pro rival.",
         stats: [["PPG", "13.6"], ["RPG", "13.1"], ["APG", "1.9"]],
         facts: ["Set a WNBA record with consecutive double-doubles as a rookie.", "Won an NCAA title at LSU in 2023.", "Known as 'the Bayou Barbie.'"],
         link: "https://en.wikipedia.org/wiki/Angel_Reese" },
