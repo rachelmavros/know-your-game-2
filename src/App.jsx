@@ -2009,7 +2009,29 @@ async function getPushSubscription() {
   return reg.pushManager.getSubscription();
 }
 
-async function subscribeToPush() {
+// Save a subscription + the user's current prefs/follows to the server, so the
+// daily job can personalize. Used on first subscribe and to re-sync on changes.
+async function savePushSubscription(sub, prefs, stars) {
+  const json = sub.toJSON();
+  const res = await fetch("/api/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      endpoint: json.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+      prefs: prefs || null,
+      stars: stars || null,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error("save-failed: " + res.status + " " + text);
+  }
+  return json.endpoint;
+}
+
+async function subscribeToPush(prefs, stars) {
   if (!pushSupported()) throw new Error("unsupported");
   const permission = await Notification.requestPermission();
   if (permission !== "granted") throw new Error("denied");
@@ -2021,26 +2043,28 @@ async function subscribeToPush() {
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
     });
   }
-  const json = sub.toJSON();
-  const res = await fetch("/api/subscribe", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      endpoint: json.endpoint,
-      p256dh: json.keys.p256dh,
-      auth: json.keys.auth,
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error("save-failed: " + res.status + " " + text);
-  }
+  await savePushSubscription(sub, prefs, stars);
   return true;
 }
 
-function PushCard() {
+// Fire the personalized notification to this device on demand (test button).
+async function sendTestPush(prefs, stars) {
+  const sub = await getPushSubscription();
+  if (!sub) throw new Error("not-subscribed");
+  await savePushSubscription(sub, prefs, stars); // sync latest prefs first
+  const res = await fetch("/api/test-push", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint: sub.toJSON().endpoint }),
+  });
+  if (!res.ok) throw new Error(await res.text().catch(() => "test failed"));
+  return res.json();
+}
+
+function PushCard({ prefs, stars }) {
   const [state, setState] = useState("loading"); // loading|on|off|working|denied|unsupported|error
   const [errMsg, setErrMsg] = useState("");
+  const [testState, setTestState] = useState("idle"); // idle|sending|sent|error
 
   useEffect(() => {
     if (!pushSupported()) { setState("unsupported"); return; }
@@ -2050,14 +2074,33 @@ function PushCard() {
       .catch(() => setState("off"));
   }, []);
 
+  // Keep the server's copy of prefs/follows current while subscribed.
+  useEffect(() => {
+    if (state !== "on") return;
+    getPushSubscription().then(sub => {
+      if (sub) savePushSubscription(sub, prefs, stars).catch(() => {});
+    });
+  }, [prefs, stars, state]);
+
   const enable = async () => {
     setState("working");
     try {
-      await subscribeToPush();
+      await subscribeToPush(prefs, stars);
       setState("on");
     } catch (e) {
       setErrMsg(e && e.message ? e.message : String(e));
       setState(e.message === "denied" ? "denied" : "error");
+    }
+  };
+
+  const test = async () => {
+    setTestState("sending");
+    try {
+      await sendTestPush(prefs, stars);
+      setTestState("sent");
+      setTimeout(() => setTestState("idle"), 4000);
+    } catch (e) {
+      setTestState("error");
     }
   };
 
@@ -2068,9 +2111,20 @@ function PushCard() {
         <div style={{ fontSize: 12.5, color: C.inkDim }}>Checking…</div>
       )}
       {state === "on" && (
-        <div style={{ fontSize: 12.5, color: C.inkMid, lineHeight: 1.55 }}>
-          ✓ You're all set. Each morning you'll get a heads-up about what's worth watching — tap it to open today's rundown.
-        </div>
+        <>
+          <div style={{ fontSize: 12.5, color: C.inkMid, lineHeight: 1.55, marginBottom: 12 }}>
+            ✓ You're all set. Each morning you'll get a heads-up featuring your top game of the day — tap it to jump straight to that game. It's personalized to the teams and leagues you follow.
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <button onClick={test} disabled={testState === "sending"} style={{
+              background: C.surface, color: C.red, border: `1px solid ${C.red}`,
+              borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 700,
+              cursor: testState === "sending" ? "default" : "pointer", fontFamily: "inherit",
+            }}>{testState === "sending" ? "Sending…" : "🔔 Send me a test notification"}</button>
+            {testState === "sent" && <span style={{ fontSize: 12, color: "#1F7A4D", fontWeight: 700 }}>Sent! Check your notifications.</span>}
+            {testState === "error" && <span style={{ fontSize: 12, color: C.red, fontWeight: 700 }}>Couldn't send — try again.</span>}
+          </div>
+        </>
       )}
       {(state === "off" || state === "error" || state === "working") && (
         <>
@@ -2103,7 +2157,7 @@ function PushCard() {
   );
 }
 
-function AlertsTab({ prefs, onPrefChange, gameAlerts, calAlerts }) {
+function AlertsTab({ prefs, onPrefChange, gameAlerts, calAlerts, stars }) {
   const rows = [
     { key: "mustWatch", label: "Championship & finals games", desc: "Clinchers and elimination games across all sports." },
     { key: "myFeed",    label: "Big games in my followed teams", desc: "Worth-your-time games in your leagues and teams." },
@@ -2114,7 +2168,7 @@ function AlertsTab({ prefs, onPrefChange, gameAlerts, calAlerts }) {
   return (
     <div>
       <InstallPrompt />
-      <PushCard />
+      <PushCard prefs={prefs} stars={stars} />
       <div style={{ background: C.redSoft, border: `1px solid ${C.red}`, borderRadius: 11, padding: "14px 16px", marginBottom: 22 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: C.red, marginBottom: 4 }}>
           {total} alert{total !== 1 ? "s" : ""} set
@@ -3368,8 +3422,20 @@ export default function App() {
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const updateAvailable = useUpdateChecker();
 
-  // Daily rundown pop-up: show every time the app opens/reloads.
-  const [showRundown, setShowRundown] = useState(true);
+  // Deep link from a push notification: /?league=&home=&away= opens that game.
+  const [focusGame, setFocusGame] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const p = new URLSearchParams(window.location.search);
+    const league = p.get("league"), home = p.get("home"), away = p.get("away");
+    return league && home && away ? { league, home, away } : null;
+  });
+
+  // Daily rundown pop-up: show every time the app opens/reloads —
+  // unless we arrived via a notification deep-link to a specific game.
+  const [showRundown, setShowRundown] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return !new URLSearchParams(window.location.search).get("home");
+  });
   const dismissRundown = () => setShowRundown(false);
 
   const flash = m => { setToast(m); setTimeout(() => setToast(null), 2300); };
@@ -3438,6 +3504,14 @@ export default function App() {
       .filter(g => g.dateKey === todayK && g.status !== "live")
       .sort((a,b) => b.verdict - a.verdict);
     hero = candidates[0] || null;
+  }
+  // Notification deep-link: if we arrived via /?league=&home=&away=, make that
+  // game the hero so the user lands right on it (with watch buttons).
+  if (focusGame) {
+    const fg = visible.find(g =>
+      g.dateKey === todayK && g.league === focusGame.league &&
+      g.home === focusGame.home && g.away === focusGame.away);
+    if (fg) hero = fg;
   }
   const restPool = visible.filter(g => g.dateKey === todayK && g !== hero && g.status !== "live");
   // "Notable" = curated highlights (real blurbs) or any high-importance game.
@@ -3573,7 +3647,7 @@ export default function App() {
         {tab === "calendar" && <CalendarTab alerts={calAlerts} onAlert={toggleCalAlert} />}
         {tab === "standings" && <StandingsTab />}
         {tab === "players" && <PlayersTab />}
-        {tab === "alerts" && <AlertsTab prefs={prefs} onPrefChange={prefChange} gameAlerts={gameAlerts} calAlerts={calAlerts} />}
+        {tab === "alerts" && <AlertsTab prefs={prefs} onPrefChange={prefChange} gameAlerts={gameAlerts} calAlerts={calAlerts} stars={stars} />}
         {tab === "edit" && <EditTab stars={stars} onToggleLeague={toggleLeague} onToggleTeam={toggleTeam} />}
         {tab === "101" && <Sports101Tab />}
         {tab === "feedback" && <FeedbackTab />}

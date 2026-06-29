@@ -18,7 +18,7 @@ export default async function handler(req) {
   }
 
   try {
-    const { endpoint, p256dh, auth } = await req.json();
+    const { endpoint, p256dh, auth, prefs, stars } = await req.json();
 
     if (!endpoint || !p256dh || !auth) {
       return new Response(JSON.stringify({ error: 'Missing subscription fields' }), {
@@ -37,7 +37,7 @@ export default async function handler(req) {
           'Authorization': `Bearer ${supabaseKey}`,
           'Prefer': 'resolution=merge-duplicates,return=minimal',
         },
-        body: JSON.stringify({ endpoint, p256dh, auth }),
+        body: JSON.stringify({ endpoint, p256dh, auth, prefs: prefs || null, stars: stars || null }),
       }
     );
 
