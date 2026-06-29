@@ -1346,9 +1346,11 @@ function ExpandableOtherGame({ game, alertOn, onAlert, first }) {
       borderTop: topBorder, cursor: "pointer",
     }}>
       <span style={{ fontSize: 8, fontWeight: 800, color: "#fff", background: LEAGUE_COLORS[game.league], borderRadius: 3, padding: "2px 5px", flexShrink: 0 }}>{game.league}</span>
+      <TeamLogo team={game.away} size={18} />
       <span style={{ fontSize: 13, color: C.inkMid, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {game.away} at {game.home}
       </span>
+      <TeamLogo team={game.home} size={18} />
       <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{game.time}</span>
       <span style={{ fontSize: 13, color: C.inkFaint, flexShrink: 0 }}>›</span>
     </div>
@@ -1526,9 +1528,11 @@ function ExpandableCalGame({ e, aid, alerts, onAlert, first }) {
       borderTop: topBorder, cursor: "pointer",
     }}>
       <span style={{ fontSize: 8, fontWeight: 800, color: "#fff", background: LEAGUE_COLORS[e.league], borderRadius: 3, padding: "2px 5px", flexShrink: 0 }}>{e.league}</span>
+      {e.away && <TeamLogo team={e.away} size={18} />}
       <span style={{ fontSize: 13, color: C.inkMid, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {label}
       </span>
+      {e.home && <TeamLogo team={e.home} size={18} />}
       <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{e.time}</span>
       <span style={{ fontSize: 13, color: C.inkFaint, flexShrink: 0 }}>›</span>
     </div>
@@ -2626,6 +2630,9 @@ function SeriesBox({ s }) {
   );
 }
 
+// Standings are hand-maintained — bump this whenever you refresh the numbers.
+const STANDINGS_UPDATED = "June 29, 2026 · 9:00 AM CT";
+
 function StandingsTab() {
   const leagues = ["WNBA", "NBA", "MLB", "WC", "MLS", "NFL", "NHL"];
   const [view, setView] = useState("WNBA");
@@ -2709,6 +2716,12 @@ function StandingsTab() {
             {SPORT_EMOJI[lg]} {lg}
           </button>
         ))}
+      </div>
+
+      {/* Updated-as-of notice */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12, fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>
+        <span style={{ fontSize: 12 }}>🕒</span>
+        Standings updated as of {STANDINGS_UPDATED}
       </div>
 
       {/* Header */}
