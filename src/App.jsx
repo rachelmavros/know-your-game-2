@@ -2271,7 +2271,7 @@ function WeekRundown() {
   const week = Array.from({ length: 7 }, (_, i) => addDays(today, i))
     .flatMap(d => (CAL_EVENTS[d] || []).map(e => ({ d, ...e })))
     .filter(e => e.verdict >= 3)
-    .sort((a, b) => b.verdict - a.verdict || a.d.localeCompare(b.d));
+    .sort((a, b) => a.d.localeCompare(b.d) || b.verdict - a.verdict);
 
   const dayName = iso => dayLabel(iso);
 
