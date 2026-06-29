@@ -17,8 +17,7 @@ export default async function handler(req, res) {
   if (!endpoint) return res.status(400).json({ error: 'Missing endpoint' });
 
   const wp = setVapid();
-  const host = process.env.VERCEL_URL || req.headers.host;
-  const games = await getTodayGames(host);
+  const games = await getTodayGames();
 
   const r = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}&select=*`, {
     headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },

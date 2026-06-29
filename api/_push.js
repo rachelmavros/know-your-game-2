@@ -28,15 +28,28 @@ function ctDateKey(iso) {
   return `${g('year')}-${g('month')}-${g('day')}`;
 }
 
-// Fetch today's (Central) games across sports via our own schedule API.
-export async function getTodayGames(host) {
+// BallDontLie endpoints (same as api/schedule.js). Queried directly so the job
+// works on protected preview deployments and doesn't depend on our own host.
+const BDL = [
+  { base: 'https://api.balldontlie.io/wnba/v1/games', key: 'BDL_WNBA_KEY', style: 'range', league: 'WNBA' },
+  { base: 'https://api.balldontlie.io/mlb/v1/games', key: 'BDL_MLB_KEY', style: 'dates', league: 'MLB' },
+  { base: 'https://api.balldontlie.io/fifa/worldcup/v1/matches', key: 'BDL_FIFA_KEY', style: 'dates', league: 'WC' },
+];
+
+// Fetch today's (Central) games across sports straight from BallDontLie.
+export async function getTodayGames() {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-  const base = host && host.startsWith('http') ? host : `https://${host}`;
-  const sports = [['wnba', 'WNBA'], ['mlb', 'MLB'], ['worldcup', 'WC']];
   const out = [];
-  for (const [sport, league] of sports) {
+  for (const cfg of BDL) {
+    const apiKey = process.env[cfg.key];
+    if (!apiKey) continue;
+    const params = new URLSearchParams();
+    if (cfg.style === 'dates') params.append('dates[]', today);
+    else { params.set('start_date', today); params.set('end_date', today); }
+    params.set('per_page', '100');
     try {
-      const r = await fetch(`${base}/api/schedule?sport=${sport}&start_date=${today}&end_date=${today}`);
+      const r = await fetch(`${cfg.base}?${params.toString()}`, { headers: { Authorization: apiKey } });
+      if (!r.ok) continue;
       const j = await r.json();
       for (const g of (j.data || [])) {
         const iso = g.date || g.datetime || '';
@@ -45,7 +58,7 @@ export async function getTodayGames(host) {
         const away = (g.visitor_team && (g.visitor_team.full_name || g.visitor_team.name)) ||
                      (g.away_team && (g.away_team.display_name || g.away_team.full_name || g.away_team.name)) || g.away_team_name || '';
         if (!home || !away) continue;
-        out.push({ league, home: home.trim(), away: away.trim(), time: ctTime(iso) });
+        out.push({ league: cfg.league, home: home.trim(), away: away.trim(), time: ctTime(iso) });
       }
     } catch { /* skip a sport that errors */ }
   }

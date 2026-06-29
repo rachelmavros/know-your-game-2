@@ -17,8 +17,7 @@ export default async function handler(req, res) {
   }
 
   const wp = setVapid();
-  const host = process.env.VERCEL_URL || req.headers.host;
-  const games = await getTodayGames(host);
+  const games = await getTodayGames();
 
   const subRes = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?select=*`, {
     headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
