@@ -2341,21 +2341,43 @@ function LoginModal({ onClose, onLogin }) {
 function WeekRundown() {
   const [state, setState] = useState("idle"); // idle | loading | done | error
   const [text, setText] = useState("");
+  const [wcCache, setWcCache] = useState([]);
+
+  // Auto-refreshed World Cup slate (cached in Supabase; live feed is paywalled).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/worldcup")
+      .then(r => r.json())
+      .then(j => { if (!cancelled) setWcCache(Array.isArray(j.data) ? j.data : []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // The next 7 days' notable games — used both for the prompt and the bullet list
   const today = todayKey();
-  const week = Array.from({ length: 7 }, (_, i) => addDays(today, i))
-    .flatMap(d => (CAL_EVENTS[d] || []).map(e => ({ d, ...e })))
+  const days = Array.from({ length: 7 }, (_, i) => addDays(today, i));
+  const curated = days.flatMap(d => (CAL_EVENTS[d] || []).map(e => ({ d, ...e })));
+  const curatedWcKeys = new Set(
+    curated.filter(e => e.league === "WC").map(e => `${e.d}:${e.home}:${e.away}`)
+  );
+  const wcExtras = wcCache
+    .filter(g => days.includes(g.date) && !curatedWcKeys.has(`${g.date}:${g.home}:${g.away}`))
+    .map(g => ({
+      d: g.date, league: "WC", home: g.home, away: g.away,
+      time: g.time || "", verdict: g.verdict || 3, channel: g.channel || "Fox", note: g.note || "",
+    }));
+  const week = [...curated, ...wcExtras]
     .filter(e => e.verdict >= 3)
     .sort((a, b) => a.d.localeCompare(b.d) || b.verdict - a.verdict);
+
+  const brief = week.map(e =>
+    `${e.d.slice(5)}: ${e.away ? `${e.away} at ${e.home}` : e.title} (${e.league}, importance ${e.verdict}/5) — ${e.note}`
+  ).join("\n");
 
   const dayName = iso => dayLabel(iso);
 
   const generate = async () => {
     setState("loading");
-    const brief = week.map(e =>
-      `${e.d.slice(5)}: ${e.away ? `${e.away} at ${e.home}` : e.title} (${e.league}, importance ${e.verdict}/5) — ${e.note}`
-    ).join("\n");
 
     const prompt = `You are a friendly sports guide writing for a CASUAL fan who follows the WNBA but often misses games because they never know the schedule. Below is this week's slate of notable games. Write a warm, punchy 3-4 sentence rundown of what's worth watching this week and why. Lead with the single biggest can't-miss game. Mention day names. No jargon, no hype clichés, no bullet points (a separate list handles those) — just plain, flowing guidance like a knowledgeable friend texting them. Do not invent any games not listed.
 
@@ -2437,6 +2459,8 @@ ${brief}`;
             background: "none", border: "none", color: "rgba(255,255,255,0.55)", cursor: "pointer",
             fontSize: 12, fontWeight: 600, fontFamily: "inherit", padding: 0, marginTop: 8,
           }}>↻ Refresh</button>
+
+          <RundownChat brief={brief} />
         </>
       )}
 
@@ -2445,6 +2469,95 @@ ${brief}`;
           Couldn't reach the rundown service. <span onClick={generate} style={{ textDecoration: "underline", cursor: "pointer" }}>Try again</span>.
         </p>
       )}
+    </div>
+  );
+}
+
+/* Inline Q&A about this week's rundown — reuses the /api/claude proxy, scoped
+   to the same game list shown above so answers stay grounded in real games. */
+function RundownChat({ brief }) {
+  const [messages, setMessages] = useState([
+    { role: "bot", text: "Ask me anything about this week's slate — like \"why is Friday a big one?\" or \"when do the Sun play?\"" },
+  ]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const send = async (text) => {
+    const q = (text ?? input).trim();
+    if (!q || busy) return;
+    setInput("");
+    const next = [...messages, { role: "user", text: q }];
+    setMessages(next);
+    setBusy(true);
+
+    const prompt = `You are a friendly sports guide helping a casual fan understand this week's schedule. Answer their question in 2-4 warm, simple sentences, no jargon. Only reference games from the list below — never invent games, teams, or dates that aren't listed.
+
+This week's games:
+${brief || "(no notable games this week)"}
+
+Question: ${q}`;
+
+    try {
+      const res = await fetch("/api/claude", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 500,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      const data = await res.json();
+      const out = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
+      setMessages([...next, { role: "bot", text: out || "Sorry, I couldn't answer that one." }]);
+    } catch (e) {
+      setMessages([...next, { role: "bot", text: "I couldn't reach the answer service just now. Try again in a moment." }]);
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.12)" }}>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", color: "rgba(255,255,255,0.5)", marginBottom: 10 }}>
+        ASK ABOUT THIS WEEK
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12, maxHeight: 260, overflowY: "auto" }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{
+            alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+            maxWidth: "85%",
+            background: m.role === "user" ? C.red : "rgba(255,255,255,0.1)",
+            color: "#fff", padding: "9px 13px", borderRadius: 12,
+            borderBottomRightRadius: m.role === "user" ? 3 : 12,
+            borderBottomLeftRadius: m.role === "bot" ? 3 : 12,
+            fontSize: 13, lineHeight: 1.55,
+          }}>{m.text}</div>
+        ))}
+        {busy && (
+          <div style={{ alignSelf: "flex-start", background: "rgba(255,255,255,0.1)", padding: "9px 13px", borderRadius: 12 }}>
+            <span style={{ display: "inline-block", animation: "spin 0.8s linear infinite", width: 12, height: 12, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%" }} />
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && send()}
+          placeholder="Ask a question…"
+          style={{
+            flex: 1, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)",
+            borderRadius: 8, padding: "10px 13px", color: "#fff", fontSize: 13.5, fontFamily: "inherit", outline: "none",
+          }}
+        />
+        <button onClick={() => send()} disabled={busy} style={{
+          background: "#fff", color: C.ink, border: "none", borderRadius: 8,
+          padding: "0 16px", fontSize: 13.5, fontWeight: 800, cursor: busy ? "default" : "pointer",
+          fontFamily: "inherit", opacity: busy ? 0.6 : 1,
+        }}>Send</button>
+      </div>
     </div>
   );
 }
