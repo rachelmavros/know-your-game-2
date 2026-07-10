@@ -38,7 +38,7 @@ Use your best knowledge of the actual tournament stage and fixtures for these da
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-5',
         max_tokens: 3000,
         system: 'You output only raw JSON. Never include prose, explanations, apologies, or markdown code fences.',
         messages: [
