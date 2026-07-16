@@ -52,9 +52,8 @@ function daysInMonth(year, month) { // month is 1-indexed
   return new Date(year, month, 0).getDate();
 }
 
-function firstWeekdayOfMonth(year, month) { // 0=Sun .. 6=Sat, returns Mon-first index
-  const jsDay = new Date(year, month - 1, 1).getDay(); // 0=Sun
-  return (jsDay + 6) % 7; // convert to Mon=0 .. Sun=6
+function firstWeekdayOfMonth(year, month) { // Sun-first index: 0=Sun .. 6=Sat
+  return new Date(year, month - 1, 1).getDay();
 }
 
 /* ─── LIVE SCHEDULE (BallDontLie) ──────────────────────────────
@@ -1565,7 +1564,7 @@ function CalendarTab({ alerts, onAlert }) {
   const today = todayKey();
   const [cursorMonth, setCursorMonth] = useState(() => today.slice(0, 7)); // "YYYY-MM", for month navigation
   const [selected, setSelected] = useState(today);
-  const [calFilters, setCalFilters] = useState({ sport: "ALL" });
+  const [calFilters, setCalFilters] = useState({ sport: "ALL", team: "ALL" });
 
   const [cy, cm] = cursorMonth.split("-").map(Number);
   const monthDays = (() => {
@@ -1577,12 +1576,29 @@ function CalendarTab({ alerts, onAlert }) {
     return days;
   })();
 
-  // Filter calendar events by sport
-  const filterEvents = evs => calFilters.sport === "ALL" ? evs : evs.filter(e => e.league === calFilters.sport);
+  // Filter calendar events by sport and (optionally) team
+  const filterEvents = evs => evs.filter(e =>
+    (calFilters.sport === "ALL" || e.league === calFilters.sport) &&
+    (calFilters.team === "ALL" || e.home === calFilters.team || e.away === calFilters.team));
 
   // Live schedule merged over curated highlights
   const { liveEvents, status: liveStatus, counts } = useLiveSchedule();
   const eventsFor = k => mergeDayEvents(k, liveEvents);
+
+  // Teams playing this month in the selected sport — feeds the team filter row
+  const teamsForSport = (() => {
+    if (calFilters.sport === "ALL") return [];
+    const names = new Set();
+    monthDays.forEach(k => {
+      if (!k) return;
+      eventsFor(k).forEach(e => {
+        if (e.league !== calFilters.sport) return;
+        if (e.home) names.add(e.home);
+        if (e.away) names.add(e.away);
+      });
+    });
+    return [...names].sort();
+  })();
 
   const dayEvents = filterEvents(selected ? eventsFor(selected) : []);
   const selDayNum = selected ? dayNum(selected) : null;
@@ -1607,7 +1623,7 @@ function CalendarTab({ alerts, onAlert }) {
       {/* Sport filter pills */}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, paddingBottom: 2 }}>
         {["ALL", "WNBA", "NBA", "MLB", "WC", "NFL", "NHL", "MLS"].map(lg => (
-          <button key={lg} onClick={() => setCalFilters(f => ({ ...f, sport: lg }))} style={{
+          <button key={lg} onClick={() => setCalFilters({ sport: lg, team: "ALL" })} style={{
             flexShrink: 0, padding: "6px 13px", borderRadius: 16, cursor: "pointer",
             background: calFilters.sport === lg ? (LEAGUE_COLORS[lg] || C.red) : C.surface,
             color: calFilters.sport === lg ? "#fff" : C.inkDim, fontSize: 12, fontWeight: 700,
@@ -1616,6 +1632,21 @@ function CalendarTab({ alerts, onAlert }) {
           }}>{lg === "ALL" ? "All Sports" : `${SPORT_EMOJI[lg]} ${lg}`}</button>
         ))}
       </div>
+
+      {/* Team filter — appears once a sport is picked */}
+      {teamsForSport.length > 0 && (
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, paddingBottom: 2 }}>
+          {["ALL", ...teamsForSport].map(t => (
+            <button key={t} onClick={() => setCalFilters(f => ({ ...f, team: t }))} style={{
+              flexShrink: 0, padding: "5px 11px", borderRadius: 14, cursor: "pointer",
+              background: calFilters.team === t ? C.ink : C.surface,
+              color: calFilters.team === t ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 700,
+              border: `1px solid ${calFilters.team === t ? C.ink : C.line}`,
+              fontFamily: "inherit",
+            }}>{t === "ALL" ? "All teams" : t}</button>
+          ))}
+        </div>
+      )}
 
       {/* view switch */}
       <div style={{ display: "flex", gap: 4, marginBottom: 18, background: C.lineSoft, borderRadius: 9, padding: 4 }}>
@@ -1659,9 +1690,27 @@ function CalendarTab({ alerts, onAlert }) {
             )}
           </div>
 
+          {/* quick-jump: this month + the next two */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            {[0, 1, 2].map(off => {
+              const [ty, tm] = today.slice(0, 7).split("-").map(Number);
+              const d = new Date(ty, tm - 1 + off, 1);
+              const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+              const active = cursorMonth === key;
+              return (
+                <button key={key} onClick={() => setCursorMonth(key)} style={{
+                  flex: 1, padding: "7px 0", borderRadius: 8, cursor: "pointer",
+                  background: active ? C.ink : C.surface, color: active ? "#fff" : C.inkDim,
+                  fontSize: 12, fontWeight: 700, fontFamily: "inherit",
+                  border: `1px solid ${active ? C.ink : C.line}`,
+                }}>{d.toLocaleString("en-US", { month: "short" })}</button>
+              );
+            })}
+          </div>
+
           {/* weekday header */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 6 }}>
-            {["M","T","W","T","F","S","S"].map((d, i) => (
+            {["S","M","T","W","T","F","S"].map((d, i) => (
               <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 800, color: C.inkFaint, letterSpacing: "0.06em" }}>{d}</div>
             ))}
           </div>
@@ -1671,8 +1720,9 @@ function CalendarTab({ alerts, onAlert }) {
             {monthDays.map((k, i) => {
               if (k === null) return <div key={i} />;
               const d = dayNum(k);
-              const dayEvs = eventsFor(k);
+              const dayEvs = filterEvents(eventsFor(k)); // dots respect the active filters
               const hasEvents = dayEvs.length > 0;
+              const dayLeagues = [...new Set(dayEvs.map(e => e.league))];
               const isSelected = selected === k;
               const isToday = k === today;
               return (
@@ -1681,7 +1731,7 @@ function CalendarTab({ alerts, onAlert }) {
                   borderWidth: isSelected ? 2 : 1,
                   borderRadius: 9, cursor: hasEvents ? "pointer" : "default",
                   background: isSelected ? C.ink : C.surface,
-                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4,
+                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
                   padding: 0, fontFamily: "inherit",
                   opacity: hasEvents || isToday ? 1 : 0.55,
                 }}>
@@ -1689,6 +1739,11 @@ function CalendarTab({ alerts, onAlert }) {
                     fontSize: 14, fontWeight: isToday || isSelected ? 800 : 600,
                     color: isSelected ? "#fff" : isToday ? C.red : C.ink,
                   }}>{d}</span>
+                  {hasEvents && (
+                    <span style={{ fontSize: 9, lineHeight: 1, letterSpacing: "-1px" }}>
+                      {dayLeagues.slice(0, 3).map(lg => SPORT_EMOJI[lg]).join("")}
+                    </span>
+                  )}
                   {hasEvents && (
                     <div style={{ display: "flex", gap: 2 }}>
                       {dayEvs.slice(0, 3).map((e, j) => (
@@ -2791,6 +2846,67 @@ function SportsChatbot() {
   );
 }
 
+/* ─── EVENTS TAB ──────────────────────────────────────────── */
+// Curated marquee events — the cultural moments a casual fan hears about.
+// dateKey = when it happens (used to hide past events); span = display text.
+const BIG_EVENTS = [
+  { dateKey: "2026-07-19", league: "WC", title: "World Cup Final — Spain vs Argentina", span: "Sunday, July 19", where: "MetLife Stadium, NJ", tv: "Fox",
+    note: "The whole planet watches this one. Spain chases their first title since 2010; Messi's Argentina tries to repeat as champions — the first team to do that since 1962." },
+  { dateKey: "2026-07-25", league: "WNBA", title: "WNBA All-Star Game", span: "Saturday, July 25", where: "United Center, Chicago", tv: "ABC",
+    note: "The league's biggest stars on one court — Team Clark/Wilson vs Team Bueckers/Stewart, drafted playground-style by legends Cynthia Cooper and Teresa Weatherspoon." },
+  { dateKey: "2026-07-31", league: "MLB", title: "MLB Trade Deadline", span: "Friday, July 31", where: "", tv: "",
+    note: "The last day teams can trade for help before the playoff push. Contenders load up, rebuilding teams sell — expect a frenzy of player movement and big headlines." },
+  { dateKey: "2026-09-10", league: "NFL", title: "NFL Season Kickoff", span: "Thursday, September 10", where: "", tv: "NBC",
+    note: "Football is back — the defending champs host the traditional Thursday night opener, and suddenly everyone's office has a fantasy league again." },
+  { dateKey: "2026-09-13", league: "WNBA", title: "WNBA Playoffs Begin", span: "Mid-September", where: "", tv: "ESPN",
+    note: "The top 8 teams enter a bracket for the championship. If you've followed Caitlin Clark and the Fever all season, this is what it's all been building toward." },
+  { dateKey: "2026-10-01", league: "MLB", title: "MLB Postseason", span: "Early October", where: "", tv: "Fox / TBS",
+    note: "Six months of baseball come down to October. Short series, packed stadiums, and the sport at its most dramatic — even casual fans get pulled in." },
+  { dateKey: "2026-10-20", league: "NBA", title: "NBA Opening Night", span: "Late October", where: "", tv: "TNT / ESPN",
+    note: "The Knicks begin their title defense. Opening night is a double-header showcase of the league's biggest stars." },
+];
+
+function EventsTab() {
+  const today = todayKey();
+  const upcoming = BIG_EVENTS.filter(e => e.dateKey >= today);
+  return (
+    <div>
+      <div style={{ fontSize: 20, fontWeight: 900, color: C.ink, marginBottom: 6 }}>📅 Big Events Coming Up</div>
+      <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 18 }}>
+        The marquee moments on the sports calendar — the ones people talk about even if they don't follow the games.
+      </p>
+      {upcoming.map((e, i) => {
+        const lc = LEAGUE_COLORS[e.league] || C.red;
+        const isNext = i === 0;
+        return (
+          <div key={e.title} style={{
+            background: isNext ? "#15202B" : C.surface,
+            border: isNext ? "none" : `1px solid ${C.line}`,
+            borderRadius: 12, padding: "16px 18px", marginBottom: 12,
+            color: isNext ? "#fff" : C.ink,
+          }}>
+            {isNext && (
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>
+                ⭐ UP NEXT
+              </div>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 17 }}>{SPORT_EMOJI[e.league]}</span>
+              <span style={{ fontSize: 15.5, fontWeight: 800 }}>{e.title}</span>
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: isNext ? "rgba(255,255,255,0.75)" : lc, marginBottom: 8 }}>
+              {e.span}{e.where ? ` · ${e.where}` : ""}{e.tv ? ` · 📺 ${e.tv}` : ""}
+            </div>
+            <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, color: isNext ? "rgba(255,255,255,0.85)" : C.inkDim }}>
+              {e.note}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ─── STANDINGS / BRACKET TAB ─────────────────────────────── */
 
 function SeriesBox({ s }) {
@@ -3741,6 +3857,7 @@ export default function App() {
   const TABS = [
     { id: "today", label: "Today" },
     { id: "calendar", label: "Calendar" },
+    { id: "events", label: "Events" },
     { id: "standings", label: "Standings" },
     { id: "players", label: "Players" },
     { id: "101", label: "Sports 101" },
@@ -3861,6 +3978,7 @@ export default function App() {
           </>
         )}
         {tab === "calendar" && <CalendarTab alerts={calAlerts} onAlert={toggleCalAlert} />}
+        {tab === "events" && <EventsTab />}
         {tab === "standings" && <StandingsTab />}
         {tab === "players" && <PlayersTab />}
         {tab === "alerts" && <AlertsTab prefs={prefs} onPrefChange={prefChange} gameAlerts={gameAlerts} calAlerts={calAlerts} stars={stars} />}
