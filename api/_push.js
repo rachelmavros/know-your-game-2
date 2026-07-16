@@ -65,9 +65,9 @@ export async function getTodayGames() {
   return out;
 }
 
-// Pick the most notable game for a given subscription, using its saved follows.
-export function pickTopGame(games, sub) {
-  if (!games.length) return null;
+// Rank games for a given subscription, using its saved follows. Returns the
+// full list sorted most-notable-first (callers take as many as they need).
+export function pickTopGames(games, sub) {
   const stars = sub.stars || {};
   const teams = (stars.teams || []).map(t => t.name);
   const leagues = stars.leagues || [];
@@ -78,16 +78,23 @@ export function pickTopGame(games, sub) {
     if ((MARQUEE[g.league] || []).includes(g.home) || (MARQUEE[g.league] || []).includes(g.away)) s += 10;
     return s;
   };
-  return [...games].sort((a, b) => score(b) - score(a))[0];
+  return [...games].sort((a, b) => score(b) - score(a));
 }
 
-export function buildPayload(top, total) {
+export function buildPayload(ranked, total) {
+  const [top, second] = ranked;
   const emoji = SPORT_EMOJI[top.league] || '📣';
-  const others = Math.max(0, total - 1);
-  const tail = others > 0 ? ` · +${others} more game${others > 1 ? 's' : ''} worth watching — tap for your rundown` : ' · tap for details';
+  const lines = [`${top.time} on your schedule`];
+  if (second) {
+    const emoji2 = SPORT_EMOJI[second.league] || '📣';
+    lines.push(`${emoji2} Also on: ${second.away} at ${second.home} · ${second.time}`);
+  }
+  const others = Math.max(0, total - (second ? 2 : 1));
+  if (others > 0) lines.push(`+${others} more game${others > 1 ? 's' : ''} today — tap for your full rundown`);
+  else lines.push('Tap for your full rundown');
   return JSON.stringify({
-    title: `${emoji} Top game today: ${top.away} at ${top.home}`,
-    body: `${top.time}${tail}`,
+    title: `${emoji} Don't miss it: ${top.away} at ${top.home}`,
+    body: lines.join('\n'),
     url: `/?league=${encodeURIComponent(top.league)}&home=${encodeURIComponent(top.home)}&away=${encodeURIComponent(top.away)}`,
   });
 }

@@ -599,16 +599,16 @@ const CAL_EVENTS = {
 
 // Season-context used by the AI rundown and the Sports 101 tab
 const SEASON_CONTEXT = {
-  WNBA: { phase: "Regular Season", pct: 32, detail: "Mid-season — 44-game schedule running May through September. Playoffs (8 teams) begin mid-September.",
+  WNBA: { phase: "Regular Season", pct: 54, detail: "Just past the halfway mark of the 44-game schedule running May through September. Playoffs (8 teams) begin mid-September.",
     upNext: [["Now", "Regular season"], ["Mid-Sept", "Playoffs begin (top 8)"], ["October", "WNBA Finals"]] },
   NBA:  { phase: "Off-season", pct: 0, detail: "The Knicks won the 2026 championship, beating the Spurs 4–1. The season is over — next season tips off in October.",
     upNext: [["Now", "Off-season"], ["June", "NBA Draft"], ["October", "Next season tips off"]] },
-  MLB:  { phase: "Regular Season", pct: 44, detail: "Mid-season of a 162-game grind. Standings tighten in August; playoffs start in October.",
+  MLB:  { phase: "Regular Season", pct: 55, detail: "Just past the All-Star break of a 162-game grind. Standings tighten in August; playoffs start in October.",
     upNext: [["Now", "Regular season"], ["July", "All-Star Game"], ["October", "Playoffs & World Series"]] },
   NFL:  { phase: "Off-season", pct: 0, detail: "Nothing live yet. Preseason starts in August, regular season September 10.",
     upNext: [["Now", "Off-season"], ["August", "Preseason"], ["Sept 10", "Regular season kicks off"]] },
-  WC:   { phase: "Group Stage", pct: 25, detail: "The 2026 World Cup is underway across the US, Mexico, and Canada — 48 teams competing. Knockout rounds begin in early July.",
-    upNext: [["Now", "Group stage"], ["Early July", "Round of 32 (knockouts begin)"], ["Mid-July", "Quarters & semis"], ["July 19", "World Cup Final"]] },
+  WC:   { phase: "The Final", pct: 97, detail: "The tournament is down to two: Spain vs defending champions Argentina in the final, Sunday July 19 at MetLife Stadium.",
+    upNext: [["Now", "Final: Spain vs Argentina"], ["Sun July 19", "World Cup Final · MetLife Stadium · Fox"]] },
 };
 
 // Sport emoji per league — used on headlines everywhere
@@ -732,23 +732,23 @@ const STANDINGS = {
   WNBA: {
     emoji: "🏀", label: "WNBA Playoff Picture", playoffCut: 8,
     blurb: "The top 8 teams make the playoffs — seeded by record across the whole league, not by conference. The dashed line marks the cut.",
-    cols: ["W–L", "STRK"],
+    cols: ["W–L", "GB"],
     rows: [
-      { rank: 1,  team: "Las Vegas Aces",         conf: "W", w: 9, l: 2,  streak: "W4" },
-      { rank: 2,  team: "New York Liberty",       conf: "E", w: 9, l: 3,  streak: "W2" },
-      { rank: 3,  team: "Minnesota Lynx",         conf: "W", w: 8, l: 3,  streak: "W1" },
-      { rank: 4,  team: "Indiana Fever",          conf: "E", w: 8, l: 4,  streak: "W3" },
-      { rank: 5,  team: "Seattle Storm",          conf: "W", w: 7, l: 4,  streak: "L1" },
-      { rank: 6,  team: "Connecticut Sun",        conf: "E", w: 6, l: 5,  streak: "W1" },
-      { rank: 7,  team: "Phoenix Mercury",        conf: "W", w: 6, l: 6,  streak: "L2" },
-      { rank: 8,  team: "Atlanta Dream",          conf: "E", w: 5, l: 6,  streak: "W1" },
-      { rank: 9,  team: "Chicago Sky",            conf: "E", w: 5, l: 7,  streak: "L1" },
-      { rank: 10, team: "Golden State Valkyries", conf: "W", w: 4, l: 7,  streak: "L3" },
-      { rank: 11, team: "Los Angeles Sparks",     conf: "W", w: 4, l: 8,  streak: "W1" },
-      { rank: 12, team: "Dallas Wings",           conf: "W", w: 3, l: 8,  streak: "L2" },
-      { rank: 13, team: "Washington Mystics",     conf: "E", w: 3, l: 9,  streak: "L1" },
-      { rank: 14, team: "Toronto Tempo",          conf: "E", w: 2, l: 9,  streak: "L4" },
-      { rank: 15, team: "Portland Fire",          conf: "W", w: 2, l: 10, streak: "L2" },
+      { rank: 1,  team: "Minnesota Lynx",         conf: "W", w: 18, l: 6,  gb: "—" },
+      { rank: 2,  team: "Las Vegas Aces",         conf: "W", w: 17, l: 6,  gb: "0.5" },
+      { rank: 3,  team: "Golden State Valkyries", conf: "W", w: 17, l: 7,  gb: "1.0" },
+      { rank: 4,  team: "Dallas Wings",           conf: "W", w: 16, l: 8,  gb: "2.0" },
+      { rank: 5,  team: "Indiana Fever",          conf: "E", w: 14, l: 9,  gb: "3.5" },
+      { rank: 6,  team: "Atlanta Dream",          conf: "E", w: 14, l: 10, gb: "4.0" },
+      { rank: 7,  team: "Washington Mystics",     conf: "E", w: 12, l: 10, gb: "5.0" },
+      { rank: 8,  team: "New York Liberty",       conf: "E", w: 13, l: 11, gb: "5.0" },
+      { rank: 9,  team: "Los Angeles Sparks",     conf: "W", w: 10, l: 12, gb: "7.0" },
+      { rank: 10, team: "Portland Fire",          conf: "W", w: 10, l: 14, gb: "8.0" },
+      { rank: 11, team: "Toronto Tempo",          conf: "E", w: 10, l: 14, gb: "8.0" },
+      { rank: 12, team: "Phoenix Mercury",        conf: "W", w: 8,  l: 17, gb: "10.5" },
+      { rank: 13, team: "Chicago Sky",            conf: "E", w: 7,  l: 16, gb: "10.5" },
+      { rank: 14, team: "Seattle Storm",          conf: "W", w: 6,  l: 19, gb: "12.5" },
+      { rank: 15, team: "Connecticut Sun",        conf: "E", w: 5,  l: 18, gb: "12.5" },
     ],
   },
   NBA: {
@@ -760,21 +760,21 @@ const STANDINGS = {
     blurb: "Mid-season. Each league (American & National) sends its 3 division winners plus 3 wild-card teams — 6 per side — to October. Shown here: the National League race.",
     cols: ["W–L", "GB"],
     rows: [
-      { rank: 1, team: "Los Angeles Dodgers", conf: "W", w: 44, l: 24, gb: "—" },
-      { rank: 2, team: "Philadelphia Phillies", conf: "E", w: 42, l: 27, gb: "2.5" },
-      { rank: 3, team: "Chicago Cubs",         conf: "C", w: 40, l: 28, gb: "4.0" },
-      { rank: 4, team: "San Diego Padres",     conf: "W", w: 39, l: 29, gb: "5.0" },
-      { rank: 5, team: "New York Mets",        conf: "E", w: 38, l: 30, gb: "6.0" },
-      { rank: 6, team: "Milwaukee Brewers",    conf: "C", w: 37, l: 31, gb: "7.0" },
-      { rank: 7, team: "Atlanta Braves",       conf: "E", w: 35, l: 33, gb: "9.0" },
-      { rank: 8, team: "San Francisco Giants", conf: "W", w: 34, l: 34, gb: "10.0" },
-      { rank: 9, team: "St. Louis Cardinals",  conf: "C", w: 33, l: 35, gb: "11.0" },
-      { rank: 10, team: "Cincinnati Reds",     conf: "C", w: 31, l: 37, gb: "13.0" },
-      { rank: 11, team: "Arizona Diamondbacks", conf: "W", w: 30, l: 38, gb: "14.0" },
-      { rank: 12, team: "Pittsburgh Pirates",  conf: "C", w: 29, l: 39, gb: "15.0" },
-      { rank: 13, team: "Washington Nationals", conf: "E", w: 28, l: 40, gb: "16.0" },
-      { rank: 14, team: "Miami Marlins",       conf: "E", w: 26, l: 42, gb: "18.0" },
-      { rank: 15, team: "Colorado Rockies",    conf: "W", w: 22, l: 46, gb: "22.0" },
+      { rank: 1, team: "Los Angeles Dodgers",  conf: "W", w: 58, l: 31, gb: "—" },
+      { rank: 2, team: "Milwaukee Brewers",    conf: "C", w: 54, l: 32, gb: "2.5" },
+      { rank: 3, team: "Atlanta Braves",       conf: "E", w: 51, l: 35, gb: "5.5" },
+      { rank: 4, team: "Philadelphia Phillies", conf: "E", w: 49, l: 39, gb: "8.5" },
+      { rank: 5, team: "Chicago Cubs",         conf: "C", w: 49, l: 39, gb: "8.5" },
+      { rank: 6, team: "St. Louis Cardinals",  conf: "C", w: 46, l: 39, gb: "10.0" },
+      { rank: 7, team: "Miami Marlins",        conf: "E", w: 47, l: 42, gb: "11.0" },
+      { rank: 8, team: "Washington Nationals", conf: "E", w: 46, l: 43, gb: "12.0" },
+      { rank: 9, team: "Pittsburgh Pirates",   conf: "C", w: 44, l: 45, gb: "14.0" },
+      { rank: 10, team: "San Diego Padres",    conf: "W", w: 43, l: 44, gb: "14.0" },
+      { rank: 11, team: "Arizona Diamondbacks", conf: "W", w: 43, l: 44, gb: "14.0" },
+      { rank: 12, team: "Cincinnati Reds",     conf: "C", w: 40, l: 47, gb: "17.0" },
+      { rank: 13, team: "San Francisco Giants", conf: "W", w: 36, l: 51, gb: "21.0" },
+      { rank: 14, team: "New York Mets",       conf: "E", w: 36, l: 52, gb: "21.5" },
+      { rank: 15, team: "Colorado Rockies",    conf: "W", w: 36, l: 53, gb: "22.0" },
     ],
   },
   NFL: {
@@ -792,28 +792,31 @@ const STANDINGS = {
     blurb: "MLS is mid-season. The top 9 teams in each conference make the playoffs. Shown here: the Eastern Conference race.",
     cols: ["PTS", "PLAYED"],
     rows: [
-      { rank: 1, team: "FC Cincinnati",      conf: "E", pts: 38, played: 18 },
-      { rank: 2, team: "Inter Miami",        conf: "E", pts: 36, played: 18 },
-      { rank: 3, team: "Columbus Crew",      conf: "E", pts: 33, played: 17 },
-      { rank: 4, team: "Charlotte FC",       conf: "E", pts: 31, played: 18 },
-      { rank: 5, team: "Orlando City",       conf: "E", pts: 29, played: 17 },
-      { rank: 6, team: "Philadelphia Union", conf: "E", pts: 28, played: 18 },
-      { rank: 7, team: "NYCFC",              conf: "E", pts: 27, played: 17 },
-      { rank: 8, team: "Nashville SC",       conf: "E", pts: 25, played: 18 },
-      { rank: 9, team: "Atlanta United",     conf: "E", pts: 23, played: 17 },
-      { rank: 10, team: "Chicago Fire",      conf: "E", pts: 21, played: 18 },
-      { rank: 11, team: "Toronto FC",        conf: "E", pts: 18, played: 17 },
-      { rank: 12, team: "New York Red Bulls", conf: "E", pts: 17, played: 18 },
-      { rank: 13, team: "CF Montréal",       conf: "E", pts: 15, played: 17 },
-      { rank: 14, team: "DC United",         conf: "E", pts: 13, played: 18 },
-      { rank: 15, team: "New England Revolution", conf: "E", pts: 11, played: 17 },
+      { rank: 1, team: "Nashville SC",       conf: "E", pts: 33, played: 14 },
+      { rank: 2, team: "Inter Miami",        conf: "E", pts: 31, played: 15 },
+      { rank: 3, team: "Chicago Fire",       conf: "E", pts: 26, played: 14 },
+      { rank: 4, team: "New England Revolution", conf: "E", pts: 25, played: 14 },
+      { rank: 5, team: "New York Red Bulls", conf: "E", pts: 22, played: 15 },
+      { rank: 6, team: "Charlotte FC",       conf: "E", pts: 21, played: 15 },
+      { rank: 7, team: "FC Cincinnati",      conf: "E", pts: 20, played: 15 },
+      { rank: 8, team: "NYCFC",              conf: "E", pts: 19, played: 15 },
+      { rank: 9, team: "DC United",          conf: "E", pts: 18, played: 15 },
+      { rank: 10, team: "Columbus Crew",     conf: "E", pts: 16, played: 15 },
+      { rank: 11, team: "CF Montréal",       conf: "E", pts: 14, played: 14 },
+      { rank: 12, team: "Orlando City",      conf: "E", pts: 14, played: 15 },
+      { rank: 13, team: "Toronto FC",        conf: "E", pts: 14, played: 14 },
+      { rank: 14, team: "Atlanta United",    conf: "E", pts: 11, played: 14 },
+      { rank: 15, team: "Philadelphia Union", conf: "E", pts: 7, played: 15 },
     ],
   },
   WC: {
-    emoji: "⚽", label: "World Cup — Group Stage", status: "Group Stage",
-    blurb: "The 2026 FIFA World Cup is happening right now, hosted across the US, Mexico, and Canada — 48 teams in 12 groups. The top two from each group, plus the eight best third-place teams, advance to the knockout rounds.",
-    next: "Knockout rounds begin in early July",
-    groups: true,
+    emoji: "⚽", label: "World Cup — The Final Is Set", status: "Final",
+    blurb: "Only two teams are left. Spain and defending champions Argentina meet in the final this Sunday at MetLife Stadium — Spain chasing their first title since 2010, Messi's Argentina trying to become the first back-to-back champions since 1962.",
+    next: "🏆 Final: Spain vs Argentina · Sunday, July 19 · MetLife Stadium · Fox",
+    knockout: [
+      { round: "Semifinals", games: ["Spain 2–0 France", "Argentina 2–1 England"] },
+      { round: "Quarterfinals", games: ["Spain 2–1 Belgium", "France 2–0 Morocco", "Argentina 3–1 Switzerland (extra time)", "England 2–1 Norway (extra time)"] },
+    ],
   },
 };
 
@@ -2816,7 +2819,7 @@ function SeriesBox({ s }) {
 }
 
 // Standings are hand-maintained — bump this whenever you refresh the numbers.
-const STANDINGS_UPDATED = "June 29, 2026 · 9:00 AM CT";
+const STANDINGS_UPDATED = "July 15, 2026 · 9:00 AM CT";
 
 function StandingsTab() {
   const leagues = ["WNBA", "NBA", "MLB", "WC", "MLS", "NFL", "NHL"];
@@ -2960,48 +2963,44 @@ function StandingsTab() {
         </>
       )}
 
-      {/* World Cup: all 12 group tables */}
-      {view === "WC" && (
+      {/* World Cup: knockout results + the final */}
+      {view === "WC" && s.knockout && (
         <>
-          {Object.keys(WC_GROUPS).map(g => (
-            <div key={g} style={{ marginBottom: 20 }}>
+          <div style={{ background: "#15202B", borderRadius: 12, padding: "18px 20px", color: "#fff", marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", color: "rgba(255,255,255,0.6)", marginBottom: 10 }}>
+              🏆 THE FINAL · SUNDAY, JULY 19
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginBottom: 10 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 17, fontWeight: 900 }}>
+                <TeamLogo team="Spain" size={26} /> Spain
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.5)" }}>vs</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 17, fontWeight: 900 }}>
+                <TeamLogo team="Argentina" size={26} /> Argentina
+              </span>
+            </div>
+            <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.75)", lineHeight: 1.6, margin: 0, textAlign: "center" }}>
+              MetLife Stadium · 📺 Fox
+            </p>
+          </div>
+
+          {s.knockout.map(rd => (
+            <div key={rd.round} style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", color: C.inkFaint, marginBottom: 8 }}>
-                GROUP {g}
+                {rd.round.toUpperCase()}
               </div>
               <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
-                <div style={{ display: "flex", padding: "7px 14px", background: lc, fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", color: "#fff" }}>
-                  <span style={{ width: 22 }}>#</span>
-                  <span style={{ flex: 1 }}>TEAM</span>
-                  <span style={{ width: 28, textAlign: "center" }}>W</span>
-                  <span style={{ width: 28, textAlign: "center" }}>D</span>
-                  <span style={{ width: 28, textAlign: "center" }}>L</span>
-                  <span style={{ width: 34, textAlign: "right" }}>PTS</span>
-                </div>
-                {WC_GROUPS[g].map((t, i) => {
-                  const advancing = i < 2; // top 2 advance directly
-                  return (
-                    <div key={t.team} style={{
-                      display: "flex", alignItems: "center", padding: "10px 14px",
-                      background: advancing ? lc + "10" : C.surface,
-                      borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}`,
-                    }}>
-                      <span style={{ width: 22, fontSize: 13, fontWeight: 900, color: advancing ? lc : C.inkFaint }}>{i + 1}</span>
-                      <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 7 }}>
-                        <TeamLogo team={t.team} size={20} />
-                        <span style={{ fontSize: 13.5, fontWeight: 700, color: C.ink }}>{t.team}</span>
-                      </span>
-                      <span style={{ width: 28, textAlign: "center", fontSize: 12, fontWeight: 600, color: C.inkMid }}>{t.w}</span>
-                      <span style={{ width: 28, textAlign: "center", fontSize: 12, fontWeight: 600, color: C.inkMid }}>{t.d}</span>
-                      <span style={{ width: 28, textAlign: "center", fontSize: 12, fontWeight: 600, color: C.inkMid }}>{t.l}</span>
-                      <span style={{ width: 34, textAlign: "right", fontSize: 13, fontWeight: 800, color: advancing ? lc : C.inkMid }}>{t.pts}</span>
-                    </div>
-                  );
-                })}
+                {rd.games.map((g, i) => (
+                  <div key={g} style={{
+                    padding: "11px 14px", fontSize: 13.5, fontWeight: 700, color: C.ink,
+                    borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}`,
+                  }}>{g}</div>
+                ))}
               </div>
             </div>
           ))}
           <div style={{ fontSize: 12, color: C.inkFaint, marginTop: 4, lineHeight: 1.5 }}>
-            Highlighted = top 2 in each group (advance to the knockouts). The 8 best third-place teams also advance. PTS = 3 for a win, 1 for a draw. {s.next}.
+            Winners are listed first in each result. {s.next}.
           </div>
         </>
       )}
@@ -3023,7 +3022,7 @@ function StandingsTab() {
         s.rows,
         s.playoffCut,
         s.cols,
-        view === "WNBA" ? "Green = currently in the playoffs. STRK is the current win/loss streak. Fever (Clark) sit 4th." :
+        view === "WNBA" ? "Green = currently in the playoffs. GB = games behind the leader. Fever (Clark) sit 5th." :
         view === "MLB"  ? "GB = games behind the leader. NL shown here; the AL race is equally tight." :
         view === "MLS"  ? "PTS = points (3 for a win, 1 for a draw). Eastern Conference shown." : null
       )}

@@ -1,7 +1,7 @@
 // api/test-push.js — sends the personalized daily notification to ONE device
 // on demand (the "Send test push" button), so you can preview/iterate.
 
-import { setVapid, getTodayGames, pickTopGame, buildPayload, sendPush } from './_push.js';
+import { setVapid, getTodayGames, pickTopGames, buildPayload, sendPush } from './_push.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -25,11 +25,11 @@ export default async function handler(req, res) {
   const sub = (await r.json())[0];
   if (!sub) return res.status(404).json({ error: 'Subscription not found — turn notifications on first.' });
 
-  const top = pickTopGame(games, sub);
-  const payload = top
-    ? buildPayload(top, games.length)
+  const ranked = pickTopGames(games, sub);
+  const payload = ranked.length
+    ? buildPayload(ranked, games.length)
     : JSON.stringify({ title: 'Know Your Game', body: 'No games on your radar today — enjoy the day off! 🟢', url: '/' });
 
   const result = await sendPush(wp, sub, payload, supabaseUrl, supabaseKey);
-  return res.status(200).json({ result, games: games.length, top: top || null });
+  return res.status(200).json({ result, games: games.length, top: ranked[0] || null });
 }

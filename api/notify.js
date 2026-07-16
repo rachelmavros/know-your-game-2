@@ -1,7 +1,7 @@
 // api/notify.js — daily push job (Vercel Cron). Sends each subscriber a
 // personalized "top game today" notification based on their saved follows.
 
-import { setVapid, getTodayGames, pickTopGame, buildPayload, sendPush } from './_push.js';
+import { setVapid, getTodayGames, pickTopGames, buildPayload, sendPush } from './_push.js';
 
 export default async function handler(req, res) {
   // If CRON_SECRET is set, Vercel Cron sends it as a Bearer token.
@@ -29,9 +29,9 @@ export default async function handler(req, res) {
 
   let sent = 0, removed = 0, skipped = 0;
   for (const sub of subs) {
-    const top = pickTopGame(games, sub);
-    if (!top) { skipped++; continue; } // no games today → don't nag
-    const result = await sendPush(wp, sub, buildPayload(top, games.length), supabaseUrl, supabaseKey);
+    const ranked = pickTopGames(games, sub);
+    if (!ranked.length) { skipped++; continue; } // no games today → don't nag
+    const result = await sendPush(wp, sub, buildPayload(ranked, games.length), supabaseUrl, supabaseKey);
     if (result === 'sent') sent++;
     else if (result === 'removed') removed++;
   }
