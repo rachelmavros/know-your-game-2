@@ -2941,7 +2941,27 @@ function StandingsTab() {
   const leagues = ["WNBA", "NBA", "MLB", "WC", "MLS", "NFL", "NHL"];
   const [view, setView] = useState("WNBA");
   const lc = LEAGUE_COLORS[view];
-  const s = STANDINGS[view];
+
+  // Auto-refreshed WNBA + MLB standings (cached daily in Supabase; BallDontLie's
+  // standings feed is paid-tier). Falls back to the built-in table below.
+  const [liveStandings, setLiveStandings] = useState(null);
+  const [liveUpdated, setLiveUpdated] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/standings")
+      .then(r => r.json())
+      .then(j => { if (!cancelled && j.data) { setLiveStandings(j.data); setLiveUpdated(j.updated_at); } })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const base = STANDINGS[view];
+  const liveRows = liveStandings && liveStandings[view.toLowerCase()];
+  // Swap in fresh rows only when we actually have them for this league.
+  const s = (liveRows && liveRows.length) ? { ...base, rows: liveRows } : base;
+  const updatedLabel = (liveRows && liveRows.length && liveUpdated)
+    ? new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(liveUpdated)) + " CT"
+    : STANDINGS_UPDATED;
 
   // Shared table renderer — same layout as the loved WNBA table
   const renderTable = (rows, playoffCut, cols, footNote) => (
@@ -3025,7 +3045,7 @@ function StandingsTab() {
       {/* Updated-as-of notice */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12, fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>
         <span style={{ fontSize: 12 }}>🕒</span>
-        Standings updated as of {STANDINGS_UPDATED}
+        Standings updated as of {updatedLabel}
       </div>
 
       {/* Header */}
