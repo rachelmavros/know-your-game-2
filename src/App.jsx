@@ -3433,22 +3433,83 @@ function StarPlayerCard({ p, lc }) {
   );
 }
 
+// A roster player's headshot with a graceful initials fallback.
+function Headshot({ src, name, size, lc }) {
+  const [failed, setFailed] = useState(false);
+  const initials = (name || "?").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  if (!src || failed) {
+    return (
+      <div style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, background: lc, color: "#fff",
+        display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.36, fontWeight: 800 }}>{initials}</div>
+    );
+  }
+  return (
+    <div style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, overflow: "hidden", border: `2px solid ${lc}55`, background: lc }}>
+      <img src={src} alt={name} width={size} height={size} loading="lazy" onError={() => setFailed(true)}
+        style={{ width: size, height: size, objectFit: "cover", objectPosition: "top center" }} />
+    </div>
+  );
+}
+
+// Full roster (from /api/players) rendered with headshots.
+function ApiRosterList({ players, lc }) {
+  return (
+    <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+      {players.map((p, i) => (
+        <div key={`${p.name}-${i}`} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}` }}>
+          <Headshot src={p.headshot} name={p.name} size={36} lc={lc} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{p.name}{p.jersey ? <span style={{ color: C.inkFaint, fontWeight: 600 }}>{` · #${p.jersey}`}</span> : ""}</div>
+            <div style={{ fontSize: 11, color: C.inkFaint }}>{[p.pos, p.age ? `Age ${p.age}` : ""].filter(Boolean).join(" · ")}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PlayersTab({ target }) {
   const leagues = Object.keys(PLAYERS);
   // null = home screen (all leagues collapsed/expanded), string = drilled into a league
   const [openLeague, setOpenLeague] = useState("WNBA"); // WNBA pre-expanded on home
   const [teamFilter, setTeamFilter] = useState("ALL");
   const [selectedPlayer, setSelectedPlayer] = useState(null); // for detail overlay
+  const [teamsByLeague, setTeamsByLeague] = useState({}); // full team lists from the API
+  const [teamRoster, setTeamRoster] = useState({ league: null, team: null, loading: false, players: [] });
 
-  // A "Learn about this team →" deep-link from a game card: open that league,
-  // and filter to the team when we actually have players for it.
+  // A "Learn about this team →" deep-link from a game card: open that league and
+  // filter to the team (the roster loads from the API, so any team works now).
   useEffect(() => {
     if (!target || !target.league) return;
     setOpenLeague(target.league);
-    const data = PLAYERS[target.league];
-    const teams = data ? [...new Set([...data.stars.map(p => p.team), ...data.roster.map(p => p.team)])] : [];
-    setTeamFilter(teams.includes(target.team) ? target.team : "ALL");
+    setTeamFilter(target.team || "ALL");
   }, [target]);
+
+  // Fetch the full team list for the open league (once per league).
+  useEffect(() => {
+    if (!openLeague || teamsByLeague[openLeague]) return;
+    let cancelled = false;
+    fetch(`/api/players?league=${encodeURIComponent(openLeague)}`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled) setTeamsByLeague(m => ({ ...m, [openLeague]: Array.isArray(j.teams) ? j.teams : [] })); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [openLeague, teamsByLeague]);
+
+  // Fetch the selected team's full roster.
+  useEffect(() => {
+    if (!openLeague || teamFilter === "ALL") return;
+    const teams = teamsByLeague[openLeague] || [];
+    const t = teams.find(x => x.name === teamFilter);
+    if (!t) return; // team list not loaded yet, or no match
+    let cancelled = false;
+    setTeamRoster({ league: openLeague, team: teamFilter, loading: true, players: [] });
+    fetch(`/api/players?league=${encodeURIComponent(openLeague)}&team=${encodeURIComponent(t.id)}`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled) setTeamRoster({ league: openLeague, team: teamFilter, loading: false, players: Array.isArray(j.players) ? j.players : [] }); })
+      .catch(() => { if (!cancelled) setTeamRoster({ league: openLeague, team: teamFilter, loading: false, players: [] }); });
+    return () => { cancelled = true; };
+  }, [openLeague, teamFilter, teamsByLeague]);
 
   const drillInto = (lg) => {
     setOpenLeague(lg === openLeague ? null : lg);
@@ -3465,10 +3526,10 @@ function PlayersTab({ target }) {
         const lc = LEAGUE_COLORS[lg];
         const isOpen = openLeague === lg;
         const data = PLAYERS[lg];
-        const allTeams = [...new Set([
-          ...data.stars.map(p => p.team),
-          ...data.roster.map(p => p.team),
-        ])].sort();
+        const apiTeams = teamsByLeague[lg];
+        const allTeams = (apiTeams && apiTeams.length)
+          ? apiTeams.map(t => t.name).sort()
+          : [...new Set([...data.stars.map(p => p.team), ...data.roster.map(p => p.team)])].sort();
         const stars = data.stars.filter(p => teamFilter === "ALL" || p.team === teamFilter);
         const roster = data.roster.filter(p => teamFilter === "ALL" || p.team === teamFilter);
         const coaches = data.coaches.filter(c => teamFilter === "ALL" || c.team === teamFilter);
@@ -3555,12 +3616,25 @@ function PlayersTab({ target }) {
                   </>
                 )}
 
-                {/* Rest of roster */}
-                {roster.length > 0 && (
+                {/* Full roster: when a specific team is picked, pull every player
+                    (with headshots) from the API. "All Teams" keeps curated names. */}
+                {teamFilter !== "ALL" ? (
                   <>
-                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>
-                      {teamFilter === "ALL" ? "👥 MORE ROSTER NAMES" : `👥 REST OF THE ROSTER`}
-                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>👥 FULL ROSTER</div>
+                    {teamRoster.team === teamFilter && teamRoster.loading ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.inkDim, padding: "8px 2px" }}>
+                        <span style={{ width: 13, height: 13, border: `2px solid ${C.line}`, borderTopColor: lc, borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
+                        Loading the full roster…
+                      </div>
+                    ) : (teamRoster.team === teamFilter && teamRoster.players.length) ? (
+                      <ApiRosterList players={teamRoster.players} lc={lc} />
+                    ) : (
+                      <div style={{ fontSize: 12.5, color: C.inkFaint, padding: "6px 2px" }}>Roster isn't available for this team right now.</div>
+                    )}
+                  </>
+                ) : roster.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>👥 MORE ROSTER NAMES</div>
                     <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
                       {roster.map((p, i) => (
                         <div key={p.name} style={{
