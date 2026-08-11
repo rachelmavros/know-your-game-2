@@ -2847,13 +2847,26 @@ const SPORT_101 = [
   },
 ];
 
+// When the hand-curated tabs (Sports 101, Events) were last reviewed.
+const CONTENT_UPDATED = "August 11, 2026";
+
+function UpdatedNote({ label }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>
+      <span style={{ fontSize: 12 }}>🕒</span>
+      {label} updated as of {CONTENT_UPDATED}
+    </div>
+  );
+}
+
 function Sports101Tab() {
   const [open, setOpen] = useState("WNBA");
   return (
     <div>
-      <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.6, marginBottom: 18 }}>
+      <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.6, marginBottom: 12 }}>
         New to a sport, or just fuzzy on how it all works? Here's the plain-English version — where each season stands right now, and how the playoffs and series actually work.
       </p>
+      <UpdatedNote label="Season info" />
       {SPORT_101.map(s => {
         const lc = LEAGUE_COLORS[s.league];
         const isOpen = open === s.league;
@@ -3032,9 +3045,10 @@ function EventsTab() {
   return (
     <div>
       <div style={{ fontSize: 20, fontWeight: 900, color: C.ink, marginBottom: 6 }}>📅 Big Events Coming Up</div>
-      <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 18 }}>
+      <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 12 }}>
         The marquee moments on the sports calendar — the ones people talk about even if they don't follow the games.
       </p>
+      <UpdatedNote label="Events" />
       {upcoming.map((e, i) => {
         const lc = LEAGUE_COLORS[e.league] || C.red;
         const isNext = i === 0;
