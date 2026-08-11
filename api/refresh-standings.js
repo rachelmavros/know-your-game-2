@@ -42,7 +42,7 @@ Rules:
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 4000,
+        max_tokens: 8000,
         system: 'You output only raw JSON. Never include prose, explanations, apologies, or markdown code fences.',
         tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 6 }],
         messages: [{ role: 'user', content: prompt }],
