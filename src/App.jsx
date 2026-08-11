@@ -1428,7 +1428,8 @@ function HeroCard({ game, alertOn, onAlert }) {
         </div>
         <div style={{ fontSize: 14, color: lc, fontWeight: 800, marginBottom: 14 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>
         <div style={{ marginBottom: 14 }}><VerdictChip level={game.verdict} /></div>
-        <p style={{ fontSize: 14, color: C.inkMid, lineHeight: 1.6, margin: "0 0 20px", maxWidth: 500 }}>{game.summary}</p>
+        <p style={{ fontSize: 14, color: C.inkMid, lineHeight: 1.6, margin: "0 0 14px", maxWidth: 500 }}>{game.summary}</p>
+        <MatchupBreakdown game={game} />
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <WatchOptions game={game} color={lc} big />
           <button onClick={() => onAlert(game.id)} style={{
@@ -1440,6 +1441,69 @@ function HeroCard({ game, alertOn, onAlert }) {
             fontSize: 13, fontWeight: 700, fontFamily: "inherit",
           }}>{alertOn ? "🔔 Alert set" : "🔕 Remind me"}</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── MATCHUP BREAKDOWN ───────────────────────────────────── */
+// Module-level nav bridge: a game card can jump the app to the Players tab
+// for one of its teams. App wires this up on mount.
+let NAV_VIEW_TEAM = null;
+
+// On-demand AI matchup breakdown + "learn about this team" deep-links.
+function MatchupBreakdown({ game }) {
+  const [state, setState] = useState("idle"); // idle | loading | done | error
+  const [text, setText] = useState("");
+  const lc = LEAGUE_COLORS[game.league];
+
+  const analyze = async () => {
+    setState("loading");
+    const prompt = `You're a friendly sports explainer for a casual fan who doesn't follow sports closely. In 3-4 short, warm sentences, break down this ${game.league} game: ${game.away} at ${game.home}. Say what each team is about this season (are they good? who's their star or storyline?) and one concrete reason this matchup is worth watching. Plain language, no jargon, and do NOT invent specific stats, records, or scores — keep it about the story.`;
+    try {
+      const res = await fetch("/api/claude", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 400, messages: [{ role: "user", content: prompt }] }),
+      });
+      const data = await res.json();
+      const out = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
+      setText(out || "Couldn't load a breakdown right now.");
+      setState("done");
+    } catch { setState("error"); }
+  };
+
+  const teamBtn = (label) => (
+    <button key={label} onClick={() => NAV_VIEW_TEAM && NAV_VIEW_TEAM(game.league, label)} style={{
+      background: "transparent", color: lc, border: `1px solid ${lc}`, borderRadius: 6,
+      padding: "6px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+    }}>Learn about {label} →</button>
+  );
+
+  return (
+    <div style={{ margin: "2px 0 12px" }}>
+      {state === "idle" && (
+        <button onClick={analyze} style={{
+          background: C.bg, color: lc, border: `1px solid ${C.line}`, borderRadius: 6,
+          padding: "7px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+        }}>🔍 Break down this matchup</button>
+      )}
+      {state === "loading" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.inkDim, padding: "4px 0" }}>
+          <span style={{ width: 13, height: 13, border: `2px solid ${C.line}`, borderTopColor: lc, borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
+          Reading up on both teams…
+        </div>
+      )}
+      {state === "done" && (
+        <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.6, margin: "0 0 10px", background: C.bg, borderRadius: 8, padding: "11px 13px" }}>{text}</p>
+      )}
+      {state === "error" && (
+        <p style={{ fontSize: 12.5, color: C.inkDim, margin: "0 0 8px" }}>
+          Couldn't load the breakdown. <span onClick={analyze} style={{ color: lc, textDecoration: "underline", cursor: "pointer" }}>Try again</span>.
+        </p>
+      )}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {teamBtn(game.away)}
+        {teamBtn(game.home)}
       </div>
     </div>
   );
@@ -1494,6 +1558,8 @@ function GameCard({ game, alertOn, onAlert }) {
 
         <div style={{ fontSize: 13, color: lc, fontWeight: 700, marginBottom: 6 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>
         <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, margin: "0 0 12px" }}>{game.summary}</p>
+
+        {!isLive && <MatchupBreakdown game={game} />}
 
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <WatchOptions game={game} color={lc} />
@@ -3305,12 +3371,22 @@ function StarPlayerCard({ p, lc }) {
   );
 }
 
-function PlayersTab() {
+function PlayersTab({ target }) {
   const leagues = Object.keys(PLAYERS);
   // null = home screen (all leagues collapsed/expanded), string = drilled into a league
   const [openLeague, setOpenLeague] = useState("WNBA"); // WNBA pre-expanded on home
   const [teamFilter, setTeamFilter] = useState("ALL");
   const [selectedPlayer, setSelectedPlayer] = useState(null); // for detail overlay
+
+  // A "Learn about this team →" deep-link from a game card: open that league,
+  // and filter to the team when we actually have players for it.
+  useEffect(() => {
+    if (!target || !target.league) return;
+    setOpenLeague(target.league);
+    const data = PLAYERS[target.league];
+    const teams = data ? [...new Set([...data.stars.map(p => p.team), ...data.roster.map(p => p.team)])] : [];
+    setTeamFilter(teams.includes(target.team) ? target.team : "ALL");
+  }, [target]);
 
   const drillInto = (lg) => {
     setOpenLeague(lg === openLeague ? null : lg);
@@ -3786,6 +3862,12 @@ ${brief || "(no notable games)"}`;
 
 export default function App() {
   const [tab, setTab] = useState("today");
+  const [playerTarget, setPlayerTarget] = useState(null); // {league, team} deep-link from a game card
+  // Wire the module-level nav bridge so game cards can jump to the Players tab.
+  useEffect(() => {
+    NAV_VIEW_TEAM = (league, team) => { setPlayerTarget({ league, team, _t: Date.now() }); setTab("players"); };
+    return () => { NAV_VIEW_TEAM = null; };
+  }, []);
   const [stars, setStars] = useState(() => load("kyg-stars-v5", { leagues: ["WNBA"], teams: [] }));
   const [gameAlerts, setGameAlerts] = useState(() => load("kyg-galerts-v3", []));
   const [calAlerts, setCalAlerts] = useState(() => load("kyg-calerts-v2", []));
@@ -4040,7 +4122,7 @@ export default function App() {
         {tab === "calendar" && <CalendarTab alerts={calAlerts} onAlert={toggleCalAlert} />}
         {tab === "events" && <EventsTab />}
         {tab === "standings" && <StandingsTab />}
-        {tab === "players" && <PlayersTab />}
+        {tab === "players" && <PlayersTab target={playerTarget} />}
         {tab === "alerts" && <AlertsTab prefs={prefs} onPrefChange={prefChange} gameAlerts={gameAlerts} calAlerts={calAlerts} stars={stars} />}
         {tab === "edit" && <EditTab stars={stars} onToggleLeague={toggleLeague} onToggleTeam={toggleTeam} />}
         {tab === "101" && <Sports101Tab />}
