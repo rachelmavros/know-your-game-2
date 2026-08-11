@@ -3375,21 +3375,27 @@ function PlayerAvatar({ name, team, size = 56, photo: photoProp }) {
   );
 }
 
+// Module-level cache so a headshot lookup happens once per player and is shared
+// across the overview + team views (photos appear instantly on revisit).
+const HEADSHOT_CACHE = {};
+
 function StarPlayerCard({ p, lc, league }) {
   const [open, setOpen] = useState(false);
-  const [photo, setPhoto] = useState(p.photo);
+  const cacheKey = `${league}:${p.team}:${p.name}`;
+  const [photo, setPhoto] = useState(p.photo || HEADSHOT_CACHE[cacheKey]);
   // Fetch the player's real headshot if we don't already have one (so star
   // cards show photos on the league overview too, for every league).
   useEffect(() => {
     if (p.photo) { setPhoto(p.photo); return; }
+    if (HEADSHOT_CACHE[cacheKey]) { setPhoto(HEADSHOT_CACHE[cacheKey]); return; }
     if (!league || !p.team || !p.name) return;
     let cancelled = false;
     fetch(`/api/headshot?league=${encodeURIComponent(league)}&team=${encodeURIComponent(p.team)}&name=${encodeURIComponent(p.name)}`)
       .then(r => r.json())
-      .then(j => { if (!cancelled && j && j.headshot) setPhoto(j.headshot); })
+      .then(j => { if (j && j.headshot) { HEADSHOT_CACHE[cacheKey] = j.headshot; if (!cancelled) setPhoto(j.headshot); } })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [p.name, p.team, p.photo, league]);
+  }, [p.name, p.team, p.photo, league, cacheKey]);
   return (
     <div style={{
       background: C.surface, border: `1px solid ${C.line}`,
