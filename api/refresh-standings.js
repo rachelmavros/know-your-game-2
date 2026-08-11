@@ -35,7 +35,8 @@ function collectEntries(node, arr) {
 
 // Fetch ESPN standings grouped by the top-level conference/league nodes.
 async function espnGrouped(path) {
-  const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${path}/standings?level=3`);
+  // ESPN moved standings from site.api.espn.com (now a stub) to site.web.api.
+  const r = await fetch(`https://site.web.api.espn.com/apis/v2/sports/${path}/standings`);
   if (!r.ok) return null;
   const j = await r.json();
   const groups = {};
@@ -54,8 +55,14 @@ async function espnGrouped(path) {
 
 // Rank a list by win pct and compute games-back.
 function rankRows(rows) {
+  const seen = new Set();
   const out = (rows || [])
-    .filter(t => t.team && Number.isFinite(t.w) && Number.isFinite(t.l))
+    .filter(t => {
+      if (!t.team || !Number.isFinite(t.w) || !Number.isFinite(t.l)) return false;
+      if (seen.has(t.team)) return false; // dedupe (tree can list a team at league + division level)
+      seen.add(t.team);
+      return true;
+    })
     .map(t => ({ team: String(t.team), w: t.w, l: t.l, conf: t.conf || '' }))
     .sort((a, b) => (b.w - b.l) - (a.w - a.l) || b.w - a.w);
   if (!out.length) return [];
