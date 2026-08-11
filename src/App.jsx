@@ -3375,34 +3375,38 @@ function PlayerAvatar({ name, team, size = 56, photo: photoProp }) {
   );
 }
 
-// Module-level cache so a headshot lookup happens once per player and is shared
-// across the overview + team views (photos appear instantly on revisit).
+// Module-level cache so each headshot is fetched once and shared everywhere
+// (overview, team views, roster rows, detail modal) — instant on revisit.
 const HEADSHOT_CACHE = {};
 
-function StarPlayerCard({ p, lc, league }) {
-  const [open, setOpen] = useState(false);
-  const cacheKey = `${league}:${p.team}:${p.name}`;
-  const [photo, setPhoto] = useState(p.photo || HEADSHOT_CACHE[cacheKey]);
-  // Fetch the player's real headshot if we don't already have one (so star
-  // cards show photos on the league overview too, for every league).
+// An avatar that self-fetches the player's real headshot (falls back to
+// initials). Pass `seed` to skip the fetch when a URL is already known.
+function PhotoAvatar({ name, team, league, size, seed }) {
+  const cacheKey = `${league}:${team}:${name}`;
+  const [photo, setPhoto] = useState(seed || HEADSHOT_CACHE[cacheKey]);
   useEffect(() => {
-    if (p.photo) { setPhoto(p.photo); return; }
+    if (seed) { setPhoto(seed); return; }
     if (HEADSHOT_CACHE[cacheKey]) { setPhoto(HEADSHOT_CACHE[cacheKey]); return; }
-    if (!league || !p.team || !p.name) return;
+    if (!league || !team || !name) return;
     let cancelled = false;
-    fetch(`/api/headshot?league=${encodeURIComponent(league)}&team=${encodeURIComponent(p.team)}&name=${encodeURIComponent(p.name)}`)
+    fetch(`/api/headshot?league=${encodeURIComponent(league)}&team=${encodeURIComponent(team)}&name=${encodeURIComponent(name)}`)
       .then(r => r.json())
       .then(j => { if (j && j.headshot) { HEADSHOT_CACHE[cacheKey] = j.headshot; if (!cancelled) setPhoto(j.headshot); } })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [p.name, p.team, p.photo, league, cacheKey]);
+  }, [name, team, league, seed, cacheKey]);
+  return <PlayerAvatar name={name} team={team} size={size} photo={photo} />;
+}
+
+function StarPlayerCard({ p, lc, league }) {
+  const [open, setOpen] = useState(false);
   return (
     <div style={{
       background: C.surface, border: `1px solid ${C.line}`,
       borderLeft: `4px solid ${teamColor(p.team)}`, borderRadius: 10, overflow: "hidden",
     }}>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "14px 16px" }}>
-        <PlayerAvatar name={p.name} team={p.team} size={54} photo={photo} />
+        <PhotoAvatar name={p.name} team={p.team} league={league} size={54} seed={p.photo} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, flexWrap: "wrap" }}>
             <span style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{p.name}</span>
@@ -3584,6 +3588,68 @@ function FeaturedPlayerCard({ name, blurb, photo, league, lc }) {
   );
 }
 
+// Player detail modal: real bio + bullet facts (from /api/player-info) + a
+// Wikipedia link and headshot. Replaces the old "full bio coming soon" stub.
+function PlayerDetailModal({ player, onClose }) {
+  const lc = LEAGUE_COLORS[player.league] || C.red;
+  const [info, setInfo] = useState(null); // null = loading; {blurb, facts}
+  const [wiki, setWiki] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/player-info?league=${encodeURIComponent(player.league)}&team=${encodeURIComponent(player.team)}&name=${encodeURIComponent(player.name)}`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled) setInfo(j && j.ok ? { blurb: j.blurb, facts: j.facts || [] } : { blurb: "", facts: [] }); })
+      .catch(() => { if (!cancelled) setInfo({ blurb: "", facts: [] }); });
+    fetchWiki(player.name, player.league).then(w => { if (!cancelled) setWiki(w); });
+    return () => { cancelled = true; };
+  }, [player.name, player.team, player.league]);
+
+  const blurb = (info && info.blurb) || player.note || "";
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(20,32,43,0.55)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.surface, borderRadius: "16px 16px 0 0", padding: "24px 22px 36px", width: "100%", maxWidth: 600, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 -8px 32px rgba(20,32,43,0.2)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
+          <PhotoAvatar name={player.name} team={player.team} league={player.league} size={52} seed={player.headshot} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: C.ink }}>{player.name}</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 3 }}>
+              <TeamLogo team={player.team} size={18} />
+              <span style={{ fontSize: 13, color: lc, fontWeight: 700 }}>{player.team}</span>
+              {player.pos && <span style={{ fontSize: 11, color: C.inkFaint, border: `1px solid ${C.line}`, borderRadius: 3, padding: "1px 6px" }}>{player.pos}</span>}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.inkFaint, cursor: "pointer" }}>×</button>
+        </div>
+
+        {info === null ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.inkDim, padding: "6px 0" }}>
+            <span style={{ width: 14, height: 14, border: `2px solid ${C.line}`, borderTopColor: lc, borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
+            Reading up on {player.name.split(" ")[0]}…
+          </div>
+        ) : (
+          <>
+            {blurb && <p style={{ fontSize: 13.5, color: C.inkMid, lineHeight: 1.65, margin: "0 0 14px" }}>{blurb}</p>}
+            {info.facts && info.facts.length > 0 && (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 8 }}>GOOD TO KNOW</div>
+                <div style={{ marginBottom: 14 }}>
+                  {info.facts.map((f, i) => (
+                    <div key={i} style={{ display: "flex", gap: 9, marginBottom: 7 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: lc, flexShrink: 0, marginTop: 6 }} />
+                      <span style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.5 }}>{f}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            <a href={(wiki && wiki.url) || `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(player.name)}`} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, background: lc, color: "#fff", padding: "9px 15px", borderRadius: 7, fontSize: 12.5, fontWeight: 700, textDecoration: "none" }}>Read on Wikipedia ↗</a>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PlayersTab({ target }) {
   const leagues = Object.keys(PLAYERS);
   // null = home screen (all leagues collapsed/expanded), string = drilled into a league
@@ -3702,7 +3768,7 @@ function PlayersTab({ target }) {
                 <div style={{ display: "flex", gap: -4 }}>
                   {data.stars.slice(0, 3).map(p => (
                     <div key={p.name} style={{ marginLeft: -6 }}>
-                      <PlayerAvatar name={p.name} team={p.team} size={28} />
+                      <PhotoAvatar name={p.name} team={p.team} league={lg} size={28} />
                     </div>
                   ))}
                 </div>
@@ -3741,11 +3807,19 @@ function PlayersTab({ target }) {
                   </>
                 )}
 
-                {/* No curated star for this team → highlight a notable "player to watch" */}
-                {showFeatured && (
+                {/* No curated star for this team → always highlight a notable
+                    "player to watch" (loads then appears). */}
+                {teamFilter !== "ALL" && stars.length === 0 && (
                   <>
                     <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>⭐ PLAYER TO WATCH</div>
-                    <FeaturedPlayerCard name={featured.player.name} blurb={featured.player.blurb} photo={rosterHeadshot(featured.player.name)} league={lg} lc={lc} />
+                    {featured.team === teamFilter && featured.player ? (
+                      <FeaturedPlayerCard name={featured.player.name} blurb={featured.player.blurb} photo={rosterHeadshot(featured.player.name)} league={lg} lc={lc} />
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.inkDim, marginBottom: 20 }}>
+                        <span style={{ width: 13, height: 13, border: `2px solid ${C.line}`, borderTopColor: lc, borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
+                        Finding a player to watch…
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -3794,7 +3868,7 @@ function PlayersTab({ target }) {
                           borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}`,
                           cursor: "pointer",
                         }} onClick={() => setSelectedPlayer({ ...p, league: lg })}>
-                          <PlayerAvatar name={p.name} team={p.team} size={30} />
+                          <PhotoAvatar name={p.name} team={p.team} league={lg} size={30} />
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{p.name}</div>
                             <div style={{ fontSize: 11, color: C.inkFaint }}>{p.team}</div>
@@ -3813,35 +3887,7 @@ function PlayersTab({ target }) {
       })}
 
       {/* Player detail overlay — tapping a roster player shows what we know */}
-      {selectedPlayer && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(20,32,43,0.55)",
-          display: "flex", alignItems: "flex-end", justifyContent: "center",
-          zIndex: 200, padding: "0 0 0 0",
-        }} onClick={() => setSelectedPlayer(null)}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: C.surface, borderRadius: "16px 16px 0 0", padding: "24px 22px 36px",
-            width: "100%", maxWidth: 600,
-            boxShadow: "0 -8px 32px rgba(20,32,43,0.2)",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
-              <PlayerAvatar name={selectedPlayer.name} team={selectedPlayer.team} size={52} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 18, fontWeight: 900, color: C.ink }}>{selectedPlayer.name}</div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 3 }}>
-                  <TeamLogo team={selectedPlayer.team} size={18} />
-                  <span style={{ fontSize: 13, color: LEAGUE_COLORS[selectedPlayer.league], fontWeight: 700 }}>{selectedPlayer.team}</span>
-                  <span style={{ fontSize: 11, color: C.inkFaint, border: `1px solid ${C.line}`, borderRadius: 3, padding: "1px 6px" }}>{selectedPlayer.pos}</span>
-                </div>
-              </div>
-              <button onClick={() => setSelectedPlayer(null)} style={{ background: "none", border: "none", fontSize: 22, color: C.inkFaint, cursor: "pointer" }}>×</button>
-            </div>
-            <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.6, margin: 0 }}>
-              {selectedPlayer.note || `${selectedPlayer.name} plays ${selectedPlayer.pos} for the ${selectedPlayer.team}. Full bio coming in the next update when we connect to live player data.`}
-            </p>
-          </div>
-        </div>
-      )}
+      {selectedPlayer && <PlayerDetailModal player={selectedPlayer} onClose={() => setSelectedPlayer(null)} />}
     </div>
   );
 }
