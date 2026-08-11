@@ -1203,21 +1203,51 @@ const LEAGUE_WATCH = {
   ],
 };
 
-// Build the watch options for a game. Show ONLY where the game actually airs
-// (its real broadcaster) — not a list of generic platforms it may not be on.
+// Real watch pages for common US sports networks, so "Watch on <network>"
+// lands on the actual place to stream it, not a search.
+const NETWORK_URLS = {
+  "espn": "https://www.espn.com/watch/", "espn2": "https://www.espn.com/watch/",
+  "espn3": "https://www.espn.com/watch/", "espnu": "https://www.espn.com/watch/",
+  "abc": "https://www.espn.com/watch/", "espn+": "https://plus.espn.com/",
+  "fox": "https://www.foxsports.com/live", "fs1": "https://www.foxsports.com/live",
+  "fs2": "https://www.foxsports.com/live", "ion": "https://www.iontelevision.com/schedule",
+  "nba tv": "https://www.nba.com/watch", "mlb network": "https://www.mlb.com/network",
+  "mlb.tv": "https://www.mlb.com/tv", "mlbn": "https://www.mlb.com/network",
+  "tnt": "https://www.tntdrama.com/watchtnt", "tbs": "https://www.tbs.com/watchtbs",
+  "trutv": "https://www.trutv.com/full-episodes", "telemundo": "https://www.telemundo.com/now",
+  "peacock": "https://www.peacocktv.com/", "apple tv+": "https://tv.apple.com",
+  "prime video": "https://www.amazon.com/gp/video/storefront",
+  "amazon prime video": "https://www.amazon.com/gp/video/storefront",
+  "cbs": "https://www.paramountplus.com/", "paramount+": "https://www.paramountplus.com/",
+  "nbc": "https://www.nbc.com/live", "usa network": "https://www.usanetwork.com/live",
+};
+const netUrl = name => NETWORK_URLS[String(name || "").toLowerCase().trim()] || null;
+
+// Build the watch options: lead with the game's ACTUAL broadcaster (from the
+// ESPN feed or curated data) when known, then the league's real streaming homes
+// so there's always a legitimate place to watch — never a bare search.
 function getWatchOptions(game) {
   if (game.watchAll && game.watchAll.length) return game.watchAll;
   const defs = LEAGUE_WATCH[game.league] || [];
+  const list = [];
+  const seen = new Set();
+  const add = (name, url) => {
+    const k = String(name).toLowerCase();
+    if (!name || !url || seen.has(k)) return;
+    seen.add(k); list.push({ name, url });
+  };
+
+  // 1) The actual broadcaster for THIS game leads, when we know it.
   if (game.channel) {
-    // Real broadcaster known (ESPN feed or curated). Link to its own page when
-    // we have one, else the matching league default, else a targeted search.
-    const match = defs.find(o => o.name.toLowerCase() === String(game.channel).toLowerCase());
-    const url = game.channelUrl || (match && match.url) ||
-      `https://www.google.com/search?q=${encodeURIComponent(`watch ${game.channel}`)}`;
-    return [{ name: game.channel, url }];
+    add(game.channel, game.channelUrl || netUrl(game.channel) || (defs[0] && defs[0].url));
   }
-  // Network unknown for this game — one honest search link, not a guess-list.
-  return [{ name: "Find where to watch", url: `https://www.google.com/search?q=${encodeURIComponent(`where to watch ${game.away || ""} vs ${game.home || ""} today`)}` }];
+  // 2) The league's real streaming homes — always valid places to watch.
+  for (const o of defs) add(o.name, o.url);
+  // 3) Absolute last resort, only if a league has no defaults.
+  if (!list.length) {
+    add("Find where to watch", `https://www.google.com/search?q=${encodeURIComponent(`where to watch ${game.away || ""} vs ${game.home || ""} today`)}`);
+  }
+  return list;
 }
 
 // --- Tonight's real broadcast networks (from /api/broadcasts → ESPN feed) ---
