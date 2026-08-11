@@ -4,6 +4,10 @@
 // paid-tier. The app reads it via /api/standings and falls back to its
 // built-in table if the cache is empty. Web search keeps the numbers real.
 
+// The Claude + web-search call runs long; allow up to the Hobby-plan max so the
+// function isn't killed at the default 10s (which left the cache empty).
+export const config = { maxDuration: 60 };
+
 export default async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) {
@@ -43,8 +47,9 @@ Rules:
       body: JSON.stringify({
         model: 'claude-sonnet-5',
         max_tokens: 8000,
+        thinking: { type: 'disabled' }, // faster + all tokens go to the answer (avoids the 10s→60s timeout wall)
         system: 'You output only raw JSON. Never include prose, explanations, apologies, or markdown code fences.',
-        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 6 }],
+        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 4 }],
         messages: [{ role: 'user', content: prompt }],
       }),
     });
