@@ -82,18 +82,17 @@ export function pickTopGames(games, sub) {
 }
 
 export function buildPayload(ranked, total) {
-  const [top, second] = ranked;
+  const top = ranked[0];
   const emoji = SPORT_EMOJI[top.league] || '📣';
-  const lines = [`${top.time} on your schedule`];
-  if (second) {
-    const emoji2 = SPORT_EMOJI[second.league] || '📣';
-    lines.push(`${emoji2} Also on: ${second.away} at ${second.home} · ${second.time}`);
-  }
-  const others = Math.max(0, total - (second ? 2 : 1));
-  if (others > 0) lines.push(`+${others} more game${others > 1 ? 's' : ''} today — tap for your full rundown`);
+  // List as many games as reasonably fit a notification, each with teams + time.
+  const show = ranked.slice(0, 4);
+  const lines = show.map(g => `${SPORT_EMOJI[g.league] || '📣'} ${g.away} at ${g.home} · ${g.time}`);
+  const remaining = Math.max(0, total - show.length);
+  if (remaining > 0) lines.push(`+${remaining} more today — tap for your full rundown`);
   else lines.push('Tap for your full rundown');
+  const count = total || show.length;
   return JSON.stringify({
-    title: `${emoji} Don't miss it: ${top.away} at ${top.home}`,
+    title: `${emoji} ${count} game${count > 1 ? 's' : ''} on your radar today`,
     body: lines.join('\n'),
     url: `/?league=${encodeURIComponent(top.league)}&home=${encodeURIComponent(top.home)}&away=${encodeURIComponent(top.away)}`,
   });
