@@ -3339,10 +3339,10 @@ const PLAYER_PHOTO = {
   "Vinícius Júnior": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/Vinicius_Junior_2021.jpg/240px-Vinicius_Junior_2021.jpg",
 };
 
-function PlayerAvatar({ name, team, size = 56 }) {
+function PlayerAvatar({ name, team, size = 56, photo: photoProp }) {
   const c = teamColor(team);
   const initials = name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
-  const photo = PLAYER_PHOTO[name];
+  const photo = photoProp || PLAYER_PHOTO[name];
   const [failed, setFailed] = useState(false);
 
   const fallbackAvatar = (
@@ -3383,7 +3383,7 @@ function StarPlayerCard({ p, lc }) {
       borderLeft: `4px solid ${teamColor(p.team)}`, borderRadius: 10, overflow: "hidden",
     }}>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "14px 16px" }}>
-        <PlayerAvatar name={p.name} team={p.team} size={54} />
+        <PlayerAvatar name={p.name} team={p.team} size={54} photo={p.photo} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, flexWrap: "wrap" }}>
             <span style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{p.name}</span>
@@ -3451,19 +3451,116 @@ function Headshot({ src, name, size, lc }) {
   );
 }
 
-// Full roster (from /api/players) rendered with headshots.
-function ApiRosterList({ players, lc }) {
+// Look up a short Wikipedia summary + article link for a player.
+const WIKI_TERM = { WNBA: "basketball", NBA: "basketball", MLB: "baseball", NFL: "football", NHL: "hockey" };
+async function fetchWiki(name, league) {
+  const searchUrl = `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(name)}`;
+  try {
+    const term = WIKI_TERM[league] || "";
+    const s = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(`${name} ${term}`)}&srlimit=1&format=json&origin=*`).then(r => r.json());
+    const title = s && s.query && s.query.search && s.query.search[0] && s.query.search[0].title;
+    if (!title) return { extract: "", url: searchUrl };
+    const sum = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`).then(r => r.json());
+    return {
+      extract: sum.extract || "",
+      url: (sum.content_urls && sum.content_urls.desktop && sum.content_urls.desktop.page) || `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+    };
+  } catch {
+    return { extract: "", url: searchUrl };
+  }
+}
+
+// One roster player row: tap "see more" to read a Wikipedia blurb + open the article.
+function RosterPlayerRow({ p, lc, league, first }) {
+  const [open, setOpen] = useState(false);
+  const [wiki, setWiki] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const toggle = async () => {
+    const willOpen = !open;
+    setOpen(willOpen);
+    if (willOpen && !wiki && !loading) {
+      setLoading(true);
+      setWiki(await fetchWiki(p.name, league));
+      setLoading(false);
+    }
+  };
+  return (
+    <div style={{ borderTop: first ? "none" : `1px solid ${C.lineSoft}` }}>
+      <div onClick={toggle} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", cursor: "pointer" }}>
+        <Headshot src={p.headshot} name={p.name} size={36} lc={lc} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{p.name}{p.jersey ? <span style={{ color: C.inkFaint, fontWeight: 600 }}>{` · #${p.jersey}`}</span> : ""}</div>
+          <div style={{ fontSize: 11, color: C.inkFaint }}>{[p.pos, p.age ? `Age ${p.age}` : ""].filter(Boolean).join(" · ")}</div>
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 700, color: lc, flexShrink: 0 }}>{open ? "less ▴" : "see more ▾"}</span>
+      </div>
+      {open && (
+        <div style={{ padding: "0 14px 13px 61px" }}>
+          {loading ? (
+            <div style={{ fontSize: 12, color: C.inkDim }}>Looking them up…</div>
+          ) : (
+            <>
+              {wiki && wiki.extract
+                ? <p style={{ fontSize: 12.5, color: C.inkMid, lineHeight: 1.55, margin: "0 0 9px" }}>{wiki.extract}</p>
+                : <p style={{ fontSize: 12.5, color: C.inkFaint, margin: "0 0 9px" }}>No summary found — open Wikipedia to search.</p>}
+              <a href={(wiki && wiki.url) || `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(p.name)}`} target="_blank" rel="noopener noreferrer" style={{
+                display: "inline-flex", alignItems: "center", gap: 5, background: lc, color: "#fff",
+                padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700, textDecoration: "none",
+              }}>Read on Wikipedia ↗</a>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Full roster (from /api/players) with headshots + per-player Wikipedia.
+function ApiRosterList({ players, lc, league }) {
   return (
     <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
-      {players.map((p, i) => (
-        <div key={`${p.name}-${i}`} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}` }}>
-          <Headshot src={p.headshot} name={p.name} size={36} lc={lc} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{p.name}{p.jersey ? <span style={{ color: C.inkFaint, fontWeight: 600 }}>{` · #${p.jersey}`}</span> : ""}</div>
-            <div style={{ fontSize: 11, color: C.inkFaint }}>{[p.pos, p.age ? `Age ${p.age}` : ""].filter(Boolean).join(" · ")}</div>
-          </div>
+      {players.map((p, i) => <RosterPlayerRow key={`${p.name}-${i}`} p={p} lc={lc} league={league} first={i === 0} />)}
+    </div>
+  );
+}
+
+// Highlighted "player to watch" for teams without a curated star.
+function FeaturedPlayerCard({ name, blurb, photo, league, lc }) {
+  const [open, setOpen] = useState(false);
+  const [wiki, setWiki] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const toggle = async () => {
+    const willOpen = !open;
+    setOpen(willOpen);
+    if (willOpen && !wiki && !loading) {
+      setLoading(true);
+      setWiki(await fetchWiki(name, league));
+      setLoading(false);
+    }
+  };
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderLeft: `4px solid ${lc}`, borderRadius: 10, padding: "14px 16px", marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+        <Headshot src={photo} name={name} size={54} lc={lc} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: C.ink, marginBottom: 3 }}>{name}</div>
+          {blurb && <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.55, margin: "0 0 8px" }}>{blurb}</p>}
+          <button onClick={toggle} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, fontWeight: 700, color: lc, fontFamily: "inherit" }}>{open ? "less ▴" : "see more ▾"}</button>
+          {open && (
+            <div style={{ marginTop: 9 }}>
+              {loading ? <div style={{ fontSize: 12, color: C.inkDim }}>Looking them up…</div> : (
+                <>
+                  {wiki && wiki.extract && <p style={{ fontSize: 12.5, color: C.inkMid, lineHeight: 1.55, margin: "0 0 9px" }}>{wiki.extract}</p>}
+                  <a href={(wiki && wiki.url) || `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(name)}`} target="_blank" rel="noopener noreferrer" style={{
+                    display: "inline-flex", alignItems: "center", gap: 5, background: lc, color: "#fff",
+                    padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700, textDecoration: "none",
+                  }}>Read on Wikipedia ↗</a>
+                </>
+              )}
+            </div>
+          )}
         </div>
-      ))}
+      </div>
     </div>
   );
 }
@@ -3495,6 +3592,21 @@ function PlayersTab({ target }) {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [openLeague, teamsByLeague]);
+
+  // A notable "player to watch" for the selected team when we have no curated
+  // star for it (AI-picked, cached server-side).
+  const [featured, setFeatured] = useState({ team: null, player: null });
+  useEffect(() => {
+    if (!openLeague || teamFilter === "ALL") { setFeatured({ team: null, player: null }); return; }
+    const curatedStars = (PLAYERS[openLeague] && PLAYERS[openLeague].stars || []).filter(p => p.team === teamFilter);
+    if (curatedStars.length) { setFeatured({ team: teamFilter, player: null }); return; }
+    let cancelled = false;
+    fetch(`/api/team-star?league=${encodeURIComponent(openLeague)}&team=${encodeURIComponent(teamFilter)}`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled && j && j.ok && j.name) setFeatured({ team: teamFilter, player: { name: j.name, blurb: j.blurb || "" } }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [openLeague, teamFilter]);
 
   // Fetch the selected team's full roster.
   useEffect(() => {
@@ -3533,6 +3645,19 @@ function PlayersTab({ target }) {
         const stars = data.stars.filter(p => teamFilter === "ALL" || p.team === teamFilter);
         const roster = data.roster.filter(p => teamFilter === "ALL" || p.team === teamFilter);
         const coaches = data.coaches.filter(c => teamFilter === "ALL" || c.team === teamFilter);
+        // Match a star to a real headshot from the loaded roster.
+        const rosterHeadshot = (nm) => {
+          if (teamRoster.team !== teamFilter || !teamRoster.players.length) return undefined;
+          const n = nm.toLowerCase();
+          const hit = teamRoster.players.find(p => {
+            const pn = p.name.toLowerCase();
+            return pn === n || pn.includes(n) || n.includes(pn);
+          });
+          return hit ? hit.headshot : undefined;
+        };
+        const starsWithPhotos = stars.map(p => ({ ...p, photo: rosterHeadshot(p.name) }));
+        const showFeatured = teamFilter !== "ALL" && stars.length === 0 &&
+          featured.team === teamFilter && featured.player;
 
         return (
           <div key={lg} style={{
@@ -3587,13 +3712,21 @@ function PlayersTab({ target }) {
                   ))}
                 </div>
 
-                {/* Stars */}
-                {stars.length > 0 && (
+                {/* Stars (curated, now with real headshots when a team is loaded) */}
+                {starsWithPhotos.length > 0 && (
                   <>
                     <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>⭐ STARS TO WATCH</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
-                      {stars.map(p => <StarPlayerCard key={p.name} p={p} lc={lc} />)}
+                      {starsWithPhotos.map(p => <StarPlayerCard key={p.name} p={p} lc={lc} />)}
                     </div>
+                  </>
+                )}
+
+                {/* No curated star for this team → highlight a notable "player to watch" */}
+                {showFeatured && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>⭐ PLAYER TO WATCH</div>
+                    <FeaturedPlayerCard name={featured.player.name} blurb={featured.player.blurb} photo={rosterHeadshot(featured.player.name)} league={lg} lc={lc} />
                   </>
                 )}
 
@@ -3627,7 +3760,7 @@ function PlayersTab({ target }) {
                         Loading the full roster…
                       </div>
                     ) : (teamRoster.team === teamFilter && teamRoster.players.length) ? (
-                      <ApiRosterList players={teamRoster.players} lc={lc} />
+                      <ApiRosterList players={teamRoster.players} lc={lc} league={lg} />
                     ) : (
                       <div style={{ fontSize: 12.5, color: C.inkFaint, padding: "6px 2px" }}>Roster isn't available for this team right now.</div>
                     )}
