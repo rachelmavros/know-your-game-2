@@ -2,7 +2,7 @@
 // Casual-fan focused but CONCRETE: real form, key players/rookies, a tactical
 // note, and current storylines — not rosy filler. Uses web search for accuracy.
 
-export const config = { maxDuration: 30 };
+export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
@@ -29,7 +29,7 @@ Be specific and accurate using what you find in search. Do NOT invent stats, rec
 
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 26000);
+    const timer = setTimeout(() => ctrl.abort(), 55000);
     let r;
     try {
       r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -38,7 +38,7 @@ Be specific and accurate using what you find in search. Do NOT invent stats, rec
         body: JSON.stringify({
           model: 'claude-sonnet-5', max_tokens: 1200,
           thinking: { type: 'disabled' },
-          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }],
+          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 2 }],
           messages: [{ role: 'user', content: prompt }],
         }),
       });

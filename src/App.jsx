@@ -4093,12 +4093,13 @@ export default function App() {
     }));
 
   // Attach tonight's real broadcast network (from ESPN via /api/broadcasts) to
-  // today's games that don't already carry a curated channel — powers the
-  // "Watch on <network>" buttons everywhere.
+  // today's games — powers the "Watch on <network>" buttons. ESPN is live and
+  // accurate, so it takes priority over any hand-curated channel; we clear the
+  // curated URL so the network→watch-page map resolves the link.
   const allToday = [...GAMES, ...curatedWCToday, ...liveExtras].map(g => {
-    if (g.dateKey !== todayK || g.channel) return g;
+    if (g.dateKey !== todayK) return g;
     const net = networkFor(g);
-    return net ? { ...g, channel: net } : g;
+    return net ? { ...g, channel: net, channelUrl: "" } : g;
   });
   const visible = allToday.filter(matches);
   let hero = visible.find(g => g.featured && g.dateKey === todayK);
