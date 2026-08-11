@@ -3375,15 +3375,28 @@ function PlayerAvatar({ name, team, size = 56, photo: photoProp }) {
   );
 }
 
-function StarPlayerCard({ p, lc }) {
+function StarPlayerCard({ p, lc, league }) {
   const [open, setOpen] = useState(false);
+  const [photo, setPhoto] = useState(p.photo);
+  // Fetch the player's real headshot if we don't already have one (so star
+  // cards show photos on the league overview too, for every league).
+  useEffect(() => {
+    if (p.photo) { setPhoto(p.photo); return; }
+    if (!league || !p.team || !p.name) return;
+    let cancelled = false;
+    fetch(`/api/headshot?league=${encodeURIComponent(league)}&team=${encodeURIComponent(p.team)}&name=${encodeURIComponent(p.name)}`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled && j && j.headshot) setPhoto(j.headshot); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [p.name, p.team, p.photo, league]);
   return (
     <div style={{
       background: C.surface, border: `1px solid ${C.line}`,
       borderLeft: `4px solid ${teamColor(p.team)}`, borderRadius: 10, overflow: "hidden",
     }}>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "14px 16px" }}>
-        <PlayerAvatar name={p.name} team={p.team} size={54} photo={p.photo} />
+        <PlayerAvatar name={p.name} team={p.team} size={54} photo={photo} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, flexWrap: "wrap" }}>
             <span style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{p.name}</span>
@@ -3717,7 +3730,7 @@ function PlayersTab({ target }) {
                   <>
                     <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>⭐ STARS TO WATCH</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
-                      {starsWithPhotos.map(p => <StarPlayerCard key={p.name} p={p} lc={lc} />)}
+                      {starsWithPhotos.map(p => <StarPlayerCard key={p.name} p={p} lc={lc} league={lg} />)}
                     </div>
                   </>
                 )}
