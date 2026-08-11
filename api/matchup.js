@@ -1,8 +1,30 @@
-// api/matchup.js — on-demand, web-searched matchup briefing for one game.
-// Casual-fan focused but CONCRETE: real form, key players/rookies, a tactical
-// note, and current storylines — not rosy filler. Uses web search for accuracy.
+// api/matchup.js — on-demand, concrete matchup briefing for one game. Fast
+// (no web search — that blew the serverless timeout). Instead we inject the
+// teams' REAL current records from our standings cache, then let the model add
+// player/rookie/style context from its knowledge. Concrete + quick.
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 20 };
+
+async function recordFor(supabaseUrl, supabaseKey, league, home, away) {
+  try {
+    const r = await fetch(`${supabaseUrl}/rest/v1/app_cache?key=eq.standings&select=value`, {
+      headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+    });
+    const rows = await r.json();
+    const val = Array.isArray(rows) && rows[0] && rows[0].value;
+    if (!val) return {};
+    const table = league === 'MLB' ? (val.mlb || []) : (val.wnba || []);
+    const find = name => {
+      const n = String(name).toLowerCase();
+      const hit = table.find(t => {
+        const tn = String(t.team).toLowerCase();
+        return tn === n || tn.includes(n) || n.includes(tn) || tn.split(' ').pop() === n.split(' ').pop();
+      });
+      return hit ? `${hit.w}-${hit.l}` : null;
+    };
+    return { home: find(home), away: find(away) };
+  } catch { return {}; }
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
@@ -15,34 +37,34 @@ export default async function handler(req, res) {
   const { league, home, away } = body || {};
   if (!home || !away) return res.status(400).json({ error: 'Missing teams' });
 
-  const today = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date());
+  // Pull real current records from our standings cache to anchor the briefing.
+  const rec = await recordFor(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, league, home, away);
+  const recLine = (rec.home || rec.away)
+    ? `Current records (use these exact numbers): ${away} ${rec.away || 'n/a'}, ${home} ${rec.home || 'n/a'}.`
+    : '';
 
-  const prompt = `Today is ${today}. Use web search to research the ${league || ''} game ${away} at ${home}, then write a tight, CONCRETE briefing for a casual fan who wants to actually understand what's going on — not flowery hype.
+  const prompt = `Write a tight, CONCRETE briefing for a casual fan about the ${league || ''} game ${away} at ${home} — not flowery hype.
+
+${recLine}
 
 In 4-6 short sentences (plain text: no headers, no markdown, no bullet symbols):
-- Where each team stands this season in real terms (record/form) and whether they're good right now.
-- Each team's key player(s), and specifically call out any notable rookies or recent player developments.
-- One concrete tactical point — a team's offensive or defensive identity, strength, or weakness.
-- Any current storyline or news that matters for this game (injuries, win/loss streaks, playoff or standings stakes).
+- Where each team stands and whether they're good right now (use the records above if given).
+- Each team's key player(s), and specifically call out notable rookies or young players.
+- One concrete point about a team's style — an offensive or defensive strength or weakness.
+- The storyline that makes this game matter (rivalry, playoff race, a star to watch).
 
-Be specific and accurate using what you find in search. Do NOT invent stats, records, or scores — if something isn't verifiable, leave it out. Warm but substantive, like a knowledgeable friend catching them up.`;
+Be specific and substantive. Do NOT invent exact stats or records beyond the ones provided above — if you're unsure of a number, describe it qualitatively instead. Warm but informative, like a knowledgeable friend catching them up.`;
 
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 55000);
-    let r;
-    try {
-      r = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST', signal: ctrl.signal,
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-5', max_tokens: 1200,
-          thinking: { type: 'disabled' },
-          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 2 }],
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
-    } finally { clearTimeout(timer); }
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5', max_tokens: 900,
+        thinking: { type: 'disabled' },
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
     const data = await r.json();
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
     if (!text) return res.status(200).json({ ok: false, error: 'No text in response' });
