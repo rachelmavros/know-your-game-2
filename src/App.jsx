@@ -1203,20 +1203,21 @@ const LEAGUE_WATCH = {
   ],
 };
 
-// Build the list of clickable watch options for a game, with sensible fallbacks.
+// Build the watch options for a game. Show ONLY where the game actually airs
+// (its real broadcaster) — not a list of generic platforms it may not be on.
 function getWatchOptions(game) {
   if (game.watchAll && game.watchAll.length) return game.watchAll;
   const defs = LEAGUE_WATCH[game.league] || [];
-  // A real broadcast network (from the ESPN feed or curated data) leads the list.
-  // Use its own link if we have one, otherwise the league's default watch page.
   if (game.channel) {
-    const url = game.channelUrl || (defs[0] && defs[0].url) ||
-      `https://www.google.com/search?q=${encodeURIComponent(`watch ${game.channel} live`)}`;
-    return [{ name: game.channel, url }, ...defs.filter(o => o.name !== game.channel)];
+    // Real broadcaster known (ESPN feed or curated). Link to its own page when
+    // we have one, else the matching league default, else a targeted search.
+    const match = defs.find(o => o.name.toLowerCase() === String(game.channel).toLowerCase());
+    const url = game.channelUrl || (match && match.url) ||
+      `https://www.google.com/search?q=${encodeURIComponent(`watch ${game.channel}`)}`;
+    return [{ name: game.channel, url }];
   }
-  if (defs.length) return defs;
-  // Last resort: a search so the button always goes somewhere useful.
-  return [{ name: "Find a stream", url: `https://www.google.com/search?q=${encodeURIComponent(`${game.away || ""} vs ${game.home || ""} live`)}` }];
+  // Network unknown for this game — one honest search link, not a guess-list.
+  return [{ name: "Find where to watch", url: `https://www.google.com/search?q=${encodeURIComponent(`where to watch ${game.away || ""} vs ${game.home || ""} today`)}` }];
 }
 
 // --- Tonight's real broadcast networks (from /api/broadcasts → ESPN feed) ---
@@ -1459,16 +1460,14 @@ function MatchupBreakdown({ game }) {
 
   const analyze = async () => {
     setState("loading");
-    const prompt = `You're a friendly sports explainer for a casual fan who doesn't follow sports closely. In 3-4 short, warm sentences, break down this ${game.league} game: ${game.away} at ${game.home}. Say what each team is about this season (are they good? who's their star or storyline?) and one concrete reason this matchup is worth watching. Plain language, no jargon, and do NOT invent specific stats, records, or scores — keep it about the story.`;
     try {
-      const res = await fetch("/api/claude", {
+      const res = await fetch("/api/matchup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 400, messages: [{ role: "user", content: prompt }] }),
+        body: JSON.stringify({ league: game.league, home: game.home, away: game.away }),
       });
       const data = await res.json();
-      const out = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
-      setText(out || "Couldn't load a breakdown right now.");
-      setState("done");
+      if (data && data.ok && data.text) { setText(data.text); setState("done"); }
+      else setState("error");
     } catch { setState("error"); }
   };
 
@@ -1480,28 +1479,29 @@ function MatchupBreakdown({ game }) {
   );
 
   return (
-    <div style={{ margin: "2px 0 12px" }}>
+    <div style={{ margin: "6px 0 14px" }}>
       {state === "idle" && (
         <button onClick={analyze} style={{
+          display: "block", marginBottom: 12,
           background: C.bg, color: lc, border: `1px solid ${C.line}`, borderRadius: 6,
-          padding: "7px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+          padding: "8px 13px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
         }}>🔍 Break down this matchup</button>
       )}
       {state === "loading" && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.inkDim, padding: "4px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.inkDim, padding: "4px 0 12px" }}>
           <span style={{ width: 13, height: 13, border: `2px solid ${C.line}`, borderTopColor: lc, borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
-          Reading up on both teams…
+          Researching both teams (a few seconds)…
         </div>
       )}
       {state === "done" && (
-        <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.6, margin: "0 0 10px", background: C.bg, borderRadius: 8, padding: "11px 13px" }}>{text}</p>
+        <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.65, margin: "0 0 12px", background: C.bg, borderRadius: 8, padding: "12px 14px", whiteSpace: "pre-wrap" }}>{text}</p>
       )}
       {state === "error" && (
-        <p style={{ fontSize: 12.5, color: C.inkDim, margin: "0 0 8px" }}>
+        <p style={{ fontSize: 12.5, color: C.inkDim, margin: "0 0 12px" }}>
           Couldn't load the breakdown. <span onClick={analyze} style={{ color: lc, textDecoration: "underline", cursor: "pointer" }}>Try again</span>.
         </p>
       )}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
         {teamBtn(game.away)}
         {teamBtn(game.home)}
       </div>
@@ -2494,7 +2494,7 @@ function LoginModal({ onClose, onLogin }) {
 
 /* ─── AI WEEK RUNDOWN ─────────────────────────────────────── */
 
-function WeekRundown() {
+function WeekRundown({ liveEvents }) {
   const [state, setState] = useState("idle"); // idle | loading | done | error
   const [text, setText] = useState("");
   const [wcCache, setWcCache] = useState([]);
@@ -2522,8 +2522,27 @@ function WeekRundown() {
       d: g.date, league: "WC", home: g.home, away: g.away,
       time: g.time || "", verdict: g.verdict || 3, channel: g.channel || "Fox", note: g.note || "",
     }));
-  const week = [...curated, ...wcExtras]
-    .filter(e => e.verdict >= 3)
+
+  // Live WNBA games for the week (this rundown's focus sport). Keeps the slate
+  // current now that the curated CAL_EVENTS have aged out. MLB's daily grind is
+  // left out on purpose so the rundown stays about can't-miss games.
+  const liveWeek = days.flatMap(d => (liveEvents && liveEvents[d] ? liveEvents[d] : [])
+    .filter(e => e.league === "WNBA")
+    .map(e => ({
+      d, league: "WNBA", home: e.home, away: e.away,
+      time: e.time || "", verdict: e.verdict || 3, channel: e.channel || "", note: e.note || e.summary || "",
+    })));
+
+  // Merge curated + live + WC, de-duping by date + teams.
+  const seen = new Set();
+  const week = [...curated, ...liveWeek, ...wcExtras]
+    .filter(e => {
+      if (e.verdict < 3) return false;
+      const k = `${e.d}:${e.league}:${e.home}:${e.away}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
     .sort((a, b) => a.d.localeCompare(b.d) || b.verdict - a.verdict);
 
   const brief = week.map(e =>
@@ -2533,6 +2552,13 @@ function WeekRundown() {
   const dayName = iso => dayLabel(iso);
 
   const generate = async () => {
+    // Never hand the model an empty slate — that's what produced the
+    // "paste in the schedule" reply. Say it plainly instead.
+    if (!week.length) {
+      setText("It's a quiet week on the schedule — no marquee games are lined up in the next seven days. Check back in a day or two; things usually pick back up fast.");
+      setState("done");
+      return;
+    }
     setState("loading");
 
     const prompt = `You are a friendly sports guide writing for a CASUAL fan who follows the WNBA but often misses games because they never know the schedule. Below is this week's slate of notable games. Write a warm, punchy 3-4 sentence rundown of what's worth watching this week and why. Lead with the single biggest can't-miss game. Mention day names. No jargon, no hype clichés, no bullet points (a separate list handles those) — just plain, flowing guidance like a knowledgeable friend texting them. Do not invent any games not listed.
@@ -4073,7 +4099,7 @@ export default function App() {
       <main style={{ maxWidth: 760, margin: "0 auto", padding: "22px 18px 80px" }}>
         {tab === "today" && (
           <>
-            <WeekRundown />
+            <WeekRundown liveEvents={appLiveEvents} />
             <FilterBar filters={filters} setFilters={setFilters} />
             {appLiveStatus === "done" && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>
