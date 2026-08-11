@@ -1207,13 +1207,45 @@ const LEAGUE_WATCH = {
 function getWatchOptions(game) {
   if (game.watchAll && game.watchAll.length) return game.watchAll;
   const defs = LEAGUE_WATCH[game.league] || [];
-  // A specific channel WITH a working link leads the list.
-  if (game.channel && game.channelUrl) {
-    return [{ name: game.channel, url: game.channelUrl }, ...defs.filter(o => o.name !== game.channel)];
+  // A real broadcast network (from the ESPN feed or curated data) leads the list.
+  // Use its own link if we have one, otherwise the league's default watch page.
+  if (game.channel) {
+    const url = game.channelUrl || (defs[0] && defs[0].url) ||
+      `https://www.google.com/search?q=${encodeURIComponent(`watch ${game.channel} live`)}`;
+    return [{ name: game.channel, url }, ...defs.filter(o => o.name !== game.channel)];
   }
   if (defs.length) return defs;
   // Last resort: a search so the button always goes somewhere useful.
   return [{ name: "Find a stream", url: `https://www.google.com/search?q=${encodeURIComponent(`${game.away || ""} vs ${game.home || ""} live`)}` }];
+}
+
+// --- Tonight's real broadcast networks (from /api/broadcasts → ESPN feed) ---
+// Loose team-name match: exact, substring, or shared nickname (last word).
+function teamNameMatch(a, b) {
+  if (!a || !b) return false;
+  a = a.toLowerCase().trim(); b = b.toLowerCase().trim();
+  if (a === b || a.includes(b) || b.includes(a)) return true;
+  const la = a.split(/\s+/).pop(), lb = b.split(/\s+/).pop();
+  return la === lb && la.length > 3;
+}
+
+// React hook: fetch tonight's broadcasts once; returns networkFor(game).
+function useBroadcasts() {
+  const [bc, setBc] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/broadcasts")
+      .then(r => r.json())
+      .then(j => { if (!cancelled) setBc(Array.isArray(j.games) ? j.games : []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  return (game) => {
+    if (!game) return "";
+    const hit = bc.find(b => b.league === game.league &&
+      teamNameMatch(game.home, b.home) && teamNameMatch(game.away, b.away));
+    return (hit && hit.network) || "";
+  };
 }
 
 // Watch options: shows the primary channel + a "see all" expander when there are several.
@@ -3801,6 +3833,7 @@ export default function App() {
 
   // Live schedule for today (WNBA + MLB). World Cup stays curated.
   const { liveEvents: appLiveEvents, status: appLiveStatus } = useLiveSchedule();
+  const networkFor = useBroadcasts();
   const todayK = todayKey();
   const liveToday = (appLiveEvents && appLiveEvents[todayK]) ? appLiveEvents[todayK] : [];
 
@@ -3841,7 +3874,14 @@ export default function App() {
       fromApi: true,
     }));
 
-  const allToday = [...GAMES, ...curatedWCToday, ...liveExtras];
+  // Attach tonight's real broadcast network (from ESPN via /api/broadcasts) to
+  // today's games that don't already carry a curated channel — powers the
+  // "Watch on <network>" buttons everywhere.
+  const allToday = [...GAMES, ...curatedWCToday, ...liveExtras].map(g => {
+    if (g.dateKey !== todayK || g.channel) return g;
+    const net = networkFor(g);
+    return net ? { ...g, channel: net } : g;
+  });
   const visible = allToday.filter(matches);
   let hero = visible.find(g => g.featured && g.dateKey === todayK);
   const live = visible.filter(g => g.status === "live" && g.dateKey === todayK);
