@@ -3693,6 +3693,18 @@ function PlayersTab({ target }) {
     return () => { cancelled = true; };
   }, [openLeague, teamFilter]);
 
+  // "The Scoop" — fun public storylines for the selected team.
+  const [scoop, setScoop] = useState({ team: null, bullets: [] });
+  useEffect(() => {
+    if (!openLeague || teamFilter === "ALL") { setScoop({ team: null, bullets: [] }); return; }
+    let cancelled = false;
+    fetch(`/api/scoop?league=${encodeURIComponent(openLeague)}&team=${encodeURIComponent(teamFilter)}`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled && j && j.ok && Array.isArray(j.bullets)) setScoop({ team: teamFilter, bullets: j.bullets }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [openLeague, teamFilter]);
+
   // Fetch the selected team's full roster.
   useEffect(() => {
     if (!openLeague || teamFilter === "ALL") return;
@@ -3796,6 +3808,19 @@ function PlayersTab({ target }) {
                     </button>
                   ))}
                 </div>
+
+                {/* The Scoop — fun public storylines for the selected team */}
+                {teamFilter !== "ALL" && scoop.team === teamFilter && scoop.bullets.length > 0 && (
+                  <div style={{ background: lc + "0E", border: `1px solid ${lc}33`, borderRadius: 10, padding: "12px 14px", marginBottom: 18 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: lc, marginBottom: 8 }}>🍵 THE SCOOP</div>
+                    {scoop.bullets.map((b, i) => (
+                      <div key={i} style={{ display: "flex", gap: 9, marginBottom: i === scoop.bullets.length - 1 ? 0 : 7 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: lc, flexShrink: 0, marginTop: 6 }} />
+                        <span style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.5 }}>{b}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Stars (curated, now with real headshots when a team is loaded) */}
                 {starsWithPhotos.length > 0 && (
