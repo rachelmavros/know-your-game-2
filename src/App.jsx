@@ -756,7 +756,7 @@ const STANDINGS = {
   },
   MLB: {
     emoji: "⚾", label: "MLB Standings", playoffCut: 6, splitLabel: true,
-    blurb: "Mid-season. Each league (American & National) sends its 3 division winners plus 3 wild-card teams — 6 per side — to October. Shown here: the National League race.",
+    blurb: "Each league (American & National) sends its 3 division winners plus 3 wild-card teams — 6 per side — to October. Both leagues shown below.",
     cols: ["W–L", "GB"],
     rows: [
       { rank: 1, team: "Los Angeles Dodgers",  conf: "W", w: 58, l: 31, gb: "—" },
@@ -3098,7 +3098,7 @@ function SeriesBox({ s }) {
 const STANDINGS_UPDATED = "July 15, 2026 · 9:00 AM CT";
 
 function StandingsTab() {
-  const leagues = ["WNBA", "NBA", "MLB", "WC", "MLS", "NFL", "NHL"];
+  const leagues = ["WNBA", "NBA", "MLB", "NFL", "MLS", "NHL"];
   const [view, setView] = useState("WNBA");
   const lc = LEAGUE_COLORS[view];
 
@@ -3116,12 +3116,19 @@ function StandingsTab() {
   }, []);
 
   const base = STANDINGS[view];
-  const liveRows = liveStandings && liveStandings[view.toLowerCase()];
-  // Swap in fresh rows only when we actually have them for this league.
-  const s = (liveRows && liveRows.length) ? { ...base, rows: liveRows } : base;
-  const updatedLabel = (liveRows && liveRows.length && liveUpdated)
+  // Live data is either a single ranked array (WNBA) or an object of
+  // conference → ranked array (MLB=AL/NL, NBA=East/West, NFL=AFC/NFC).
+  const liveData = liveStandings && liveStandings[view.toLowerCase()];
+  const liveIsTable = Array.isArray(liveData) && liveData.length > 0;
+  const liveIsGrouped = liveData && !Array.isArray(liveData) && typeof liveData === "object" && Object.keys(liveData).length > 0;
+  const hasLive = liveIsTable || liveIsGrouped;
+  const s = liveIsTable ? { ...base, rows: liveData } : base;
+  const updatedLabel = (hasLive && liveUpdated)
     ? new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(liveUpdated)) + " CT"
     : STANDINGS_UPDATED;
+
+  const CONF_LABEL = { AL: "American League", NL: "National League", East: "Eastern Conference", West: "Western Conference", AFC: "AFC", NFC: "NFC" };
+  const PLAYOFF_CUT = { WNBA: 8, MLB: 6, NBA: 8, NFL: 7 };
 
   // Shared table renderer — same layout as the loved WNBA table
   const renderTable = (rows, playoffCut, cols, footNote) => (
@@ -3184,6 +3191,18 @@ function StandingsTab() {
     </>
   );
 
+  // Render conference-split standings (MLB / NBA / NFL): one table per group.
+  const renderGrouped = (obj, cut, cols) => (
+    <>
+      {Object.keys(obj).map(k => (obj[k] && obj[k].length ? (
+        <div key={k} style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", color: lc, marginBottom: 8 }}>{CONF_LABEL[k] || k}</div>
+          {renderTable(obj[k], cut, cols)}
+        </div>
+      ) : null))}
+    </>
+  );
+
   return (
     <div>
       {/* League picker — scrollable pill row */}
@@ -3239,8 +3258,8 @@ function StandingsTab() {
         </div>
       )}
 
-      {/* NBA: bracket + "same table" wrapper */}
-      {view === "NBA" && (
+      {/* NBA: last season's championship bracket — only when we have no live standings */}
+      {view === "NBA" && !hasLive && (
         <>
           {NBA_BRACKET.rounds.map(round => (
             <div key={round.name} style={{ marginBottom: 22 }}>
@@ -3259,50 +3278,8 @@ function StandingsTab() {
         </>
       )}
 
-      {/* World Cup: knockout results + the final */}
-      {view === "WC" && s.knockout && (
-        <>
-          <div style={{ background: "#15202B", borderRadius: 12, padding: "18px 20px", color: "#fff", marginBottom: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", color: "rgba(255,255,255,0.6)", marginBottom: 10 }}>
-              🏆 THE FINAL · SUNDAY, JULY 19
-            </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginBottom: 10 }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 17, fontWeight: 900 }}>
-                <TeamLogo team="Spain" size={26} /> Spain
-              </span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.5)" }}>vs</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 17, fontWeight: 900 }}>
-                <TeamLogo team="Argentina" size={26} /> Argentina
-              </span>
-            </div>
-            <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.75)", lineHeight: 1.6, margin: 0, textAlign: "center" }}>
-              MetLife Stadium · 📺 Fox
-            </p>
-          </div>
-
-          {s.knockout.map(rd => (
-            <div key={rd.round} style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", color: C.inkFaint, marginBottom: 8 }}>
-                {rd.round.toUpperCase()}
-              </div>
-              <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
-                {rd.games.map((g, i) => (
-                  <div key={g} style={{
-                    padding: "11px 14px", fontSize: 13.5, fontWeight: 700, color: C.ink,
-                    borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}`,
-                  }}>{g}</div>
-                ))}
-              </div>
-            </div>
-          ))}
-          <div style={{ fontSize: 12, color: C.inkFaint, marginTop: 4, lineHeight: 1.5 }}>
-            Winners are listed first in each result. {s.next}.
-          </div>
-        </>
-      )}
-
-      {/* Off-season leagues: status card (not for WC, which shows group tables) */}
-      {s.status && view !== "WC" && (
+      {/* Off-season leagues: status card (only when we have no live standings) */}
+      {s.status && !hasLive && (
         <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "22px 20px" }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: C.ink, marginBottom: 6 }}>{s.status}</div>
           <div style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.6, marginBottom: 14 }}>{s.blurb}</div>
@@ -3313,14 +3290,26 @@ function StandingsTab() {
         </div>
       )}
 
-      {/* Live standings table leagues */}
-      {s.rows && renderTable(
-        s.rows,
-        s.playoffCut,
-        s.cols,
-        view === "WNBA" ? "Green = currently in the playoffs. GB = games behind the leader. Fever (Clark) sit 5th." :
-        view === "MLB"  ? "GB = games behind the leader. NL shown here; the AL race is equally tight." :
-        view === "MLS"  ? "PTS = points (3 for a win, 1 for a draw). Eastern Conference shown." : null
+      {/* Standings tables — grouped (MLB/NBA/NFL), single (WNBA live), or curated */}
+      {liveIsGrouped ? (
+        <>
+          {renderGrouped(liveData, PLAYOFF_CUT[view] || 0, ["W–L", "GB"])}
+          <div style={{ fontSize: 12, color: C.inkFaint, marginTop: 2, lineHeight: 1.5 }}>
+            {view === "MLB"
+              ? "All 30 teams, split by league (AL / NL). Green = in a playoff spot. GB = games behind the league leader."
+              : (view === "NBA" || view === "NFL")
+                ? "Final standings from the most recent season — the new season hasn't started yet. Green = made the playoffs."
+                : "GB = games behind the leader."}
+          </div>
+        </>
+      ) : liveIsTable ? (
+        renderTable(liveData, PLAYOFF_CUT[view] || 0, ["W–L", "GB"],
+          view === "WNBA" ? "Green = currently in the playoffs. GB = games behind the leader." : null)
+      ) : (
+        s.rows && renderTable(
+          s.rows, s.playoffCut, s.cols,
+          view === "MLS" ? "PTS = points (3 for a win, 1 for a draw). Eastern Conference shown." : null
+        )
       )}
     </div>
   );
