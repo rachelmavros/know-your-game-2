@@ -9,21 +9,34 @@ const SPORTS = [
   { league: 'MLB', path: 'baseball/mlb' },
 ];
 
-// Pull the best network label for a game. Prefer a national TV network; fall
-// back to streaming (MLB.TV) or a regional network from geoBroadcasts.
-function networkFromComp(comp) {
+// Recognizable national TV networks + league streaming, in priority order. We
+// return the single best one so the app can show a clean "Watch on <network>"
+// and link it to a real watch page (regional/local channels are too noisy).
+const PRIORITY = [
+  'ESPN2', 'ESPN+', 'ESPNU', 'ESPN', 'ABC', 'FS1', 'FS2', 'FOX', 'TNT', 'TBS', 'truTV',
+  'Peacock', 'NBC', 'USA', 'CBS', 'Paramount+', 'Prime Video', 'Amazon', 'Apple TV+',
+  'ION', 'NBA TV', 'MLB Network', 'MLBN', 'CW',
+  'MLB.TV', 'League Pass',
+];
+
+function bestNetwork(comp) {
   const names = [];
   for (const b of (comp.broadcasts || [])) {
     if (Array.isArray(b.names)) names.push(...b.names);
     else if (b.media && b.media.shortName) names.push(b.media.shortName);
   }
-  if (!names.length) {
-    for (const g of (comp.geoBroadcasts || [])) {
-      const n = g.media && (g.media.shortName || g.media.name);
-      if (n) names.push(n);
-    }
+  for (const g of (comp.geoBroadcasts || [])) {
+    const n = g.media && (g.media.shortName || g.media.name);
+    if (n) names.push(n);
   }
-  return [...new Set(names.filter(Boolean))].join(' / ');
+  const uniq = [...new Set(names.filter(Boolean))];
+  const norm = s => s.toLowerCase();
+  // Prefer a recognizable national/streaming network.
+  for (const p of PRIORITY) {
+    if (uniq.some(n => norm(n).includes(norm(p)))) return p;
+  }
+  // Otherwise the first regional network (better than nothing).
+  return uniq[0] || '';
 }
 
 export default async function handler(req, res) {
@@ -48,7 +61,7 @@ export default async function handler(req, res) {
         const home = homeC && homeC.team && (homeC.team.displayName || homeC.team.name);
         const away = awayC && awayC.team && (awayC.team.displayName || awayC.team.name);
         if (!home || !away) continue;
-        games.push({ league: s.league, home, away, network: networkFromComp(comp) });
+        games.push({ league: s.league, home, away, network: bestNetwork(comp) });
       }
     } catch (err) {
       status[s.league] = 'error:' + String(err).slice(0, 80);

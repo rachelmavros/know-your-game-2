@@ -1221,7 +1221,13 @@ const NETWORK_URLS = {
   "cbs": "https://www.paramountplus.com/", "paramount+": "https://www.paramountplus.com/",
   "nbc": "https://www.nbc.com/live", "usa network": "https://www.usanetwork.com/live",
 };
-const netUrl = name => NETWORK_URLS[String(name || "").toLowerCase().trim()] || null;
+const netUrl = name => {
+  const n = String(name || "").toLowerCase().trim();
+  if (!n) return null;
+  if (NETWORK_URLS[n]) return NETWORK_URLS[n];
+  const k = Object.keys(NETWORK_URLS).find(key => n.includes(key) || key.includes(n));
+  return k ? NETWORK_URLS[k] : null;
+};
 
 // Build the watch options: lead with the game's ACTUAL broadcaster (from the
 // ESPN feed or curated data) when known, then the league's real streaming homes
