@@ -41,18 +41,28 @@ Rules:
 
   let parsed;
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: 8000,
-        thinking: { type: 'disabled' }, // faster + all tokens go to the answer (avoids the 10s→60s timeout wall)
-        system: 'You output only raw JSON. Never include prose, explanations, apologies, or markdown code fences.',
-        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 4 }],
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
+    // Hard 50s cap so the request fails cleanly with a reason instead of the
+    // function being killed at the platform limit (which just spins forever).
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 50000);
+    let r;
+    try {
+      r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-5',
+          max_tokens: 8000,
+          thinking: { type: 'disabled' }, // faster + all tokens go to the answer
+          system: 'You output only raw JSON. Never include prose, explanations, apologies, or markdown code fences.',
+          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }],
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     const data = await r.json();
     const raw = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const start = raw.indexOf('{');
