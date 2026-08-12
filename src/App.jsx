@@ -1497,7 +1497,7 @@ function MatchupBreakdown({ game }) {
   const analyze = async () => {
     setState("loading");
     try {
-      const res = await fetch("/api/matchup", {
+      const res = await fetch("/api/ai?action=matchup", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ league: game.league, home: game.home, away: game.away }),
       });
@@ -3115,7 +3115,7 @@ function EventsTab() {
   const [filter, setFilter] = useState("ALL");
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/events")
+    fetch("/api/ai?action=events")
       .then(r => r.json())
       .then(j => { if (!cancelled && Array.isArray(j.events)) setAiEvents(j.events); })
       .catch(() => {});
@@ -3731,7 +3731,7 @@ function PlayerDetailModal({ player, onClose }) {
   const [wiki, setWiki] = useState(null);
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/player-info?league=${encodeURIComponent(player.league)}&team=${encodeURIComponent(player.team)}&name=${encodeURIComponent(player.name)}`)
+    fetch(`/api/ai?action=player-info&league=${encodeURIComponent(player.league)}&team=${encodeURIComponent(player.team)}&name=${encodeURIComponent(player.name)}`)
       .then(r => r.json())
       .then(j => { if (!cancelled) setInfo(j && j.ok ? { blurb: j.blurb, facts: j.facts || [] } : { blurb: "", facts: [] }); })
       .catch(() => { if (!cancelled) setInfo({ blurb: "", facts: [] }); });
@@ -3821,7 +3821,7 @@ function PlayersTab({ target }) {
     const curatedStars = (PLAYERS[openLeague] && PLAYERS[openLeague].stars || []).filter(p => p.team === teamFilter);
     if (curatedStars.length) { setFeatured({ team: teamFilter, player: null }); return; }
     let cancelled = false;
-    fetch(`/api/team-star?league=${encodeURIComponent(openLeague)}&team=${encodeURIComponent(teamFilter)}`)
+    fetch(`/api/ai?action=team-star&league=${encodeURIComponent(openLeague)}&team=${encodeURIComponent(teamFilter)}`)
       .then(r => r.json())
       .then(j => { if (!cancelled && j && j.ok && j.name) setFeatured({ team: teamFilter, player: { name: j.name, blurb: j.blurb || "" } }); })
       .catch(() => {});
@@ -3833,7 +3833,7 @@ function PlayersTab({ target }) {
   useEffect(() => {
     if (!openLeague || teamFilter === "ALL") { setScoop({ team: null, bullets: [] }); return; }
     let cancelled = false;
-    fetch(`/api/scoop?league=${encodeURIComponent(openLeague)}&team=${encodeURIComponent(teamFilter)}`)
+    fetch(`/api/ai?action=scoop&league=${encodeURIComponent(openLeague)}&team=${encodeURIComponent(teamFilter)}`)
       .then(r => r.json())
       .then(j => { if (!cancelled && j && j.ok && Array.isArray(j.bullets)) setScoop({ team: teamFilter, bullets: j.bullets }); })
       .catch(() => {});
