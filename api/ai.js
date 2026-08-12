@@ -151,7 +151,7 @@ Respond ONLY as raw JSON: {"bullets":["...","..."]}. No markdown.`;
 }
 
 async function doEvents() {
-  const key = 'events-list';
+  const key = 'events-list-v2'; // v2 = includes EPL
   const FRESH_MS = 14 * 86400000;
   const c = await cacheGet(key);
   let stale = null;
@@ -160,9 +160,9 @@ async function doEvents() {
     stale = c.value;
   }
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-  const prompt = `Today is ${today}. List the 8-12 biggest upcoming US sports events over roughly the next 6 months that a CASUAL fan would care about — drafts, All-Star games, trade deadlines, playoff starts, championships/finals, season openers across WNBA, NBA, MLB, NFL, NHL.
+  const prompt = `Today is ${today}. List the 8-12 biggest upcoming sports events over roughly the next 6 months that a CASUAL fan would care about — drafts, All-Star games, trade/transfer deadlines, playoff starts, championships/finals, and season openers across WNBA, NBA, MLB, NFL, NHL, and the English Premier League (EPL) — include EPL opening weekend, big derbies, and the transfer deadline.
 
-Each object EXACTLY: {"dateKey":"YYYY-MM-DD" (today or later), "league":"WNBA|NBA|MLB|NFL|NHL", "title":"short name", "span":"human timing e.g. 'Late October'", "where":"venue or ''", "tv":"network or ''", "note":"one warm sentence on why a casual fan should care"}.
+Each object EXACTLY: {"dateKey":"YYYY-MM-DD" (today or later), "league":"WNBA|NBA|MLB|NFL|NHL|EPL", "title":"short name", "span":"human timing e.g. 'Late October'", "where":"venue or ''", "tv":"network or ''", "note":"one warm sentence on why a casual fan should care"}.
 
 Only real, scheduled or clearly recurring events. Earliest first. Output ONLY a JSON array, no markdown.`;
   const raw = await claude({ max_tokens: 2000, system: 'You output only a raw JSON array.', messages: [{ role: 'user', content: prompt }] });
@@ -178,6 +178,25 @@ Only real, scheduled or clearly recurring events. Earliest first. Output ONLY a 
   return { events: arr };
 }
 
+async function doLeagueStars(q) {
+  const league = String(q.league || '').toUpperCase();
+  if (!league) return { ok: false };
+  const key = `lstars:${league}`.toLowerCase();
+  const c = await cacheGet(key);
+  if (c && c.value && Array.isArray(c.value.stars)) return { ok: true, cached: true, stars: c.value.stars };
+  const prompt = `Name the 6 most notable, best-known ${league} players right now, for a casual fan. For each output: {"name":"Full Name","team":"team name","pos":"position","blurb":"one warm sentence on who they are and why they matter","facts":["short interesting fact","another short fact"]}. Use real, well-known information; do NOT invent specific stats or numbers. Output ONLY a raw JSON array, no markdown.`;
+  const raw = await claude({ max_tokens: 1300, system: 'You output only a raw JSON array.', messages: [{ role: 'user', content: prompt }] });
+  const arr = raw && grabJSON(raw, '[', ']');
+  if (!Array.isArray(arr)) return { ok: false };
+  const stars = arr.filter(x => x && x.name && x.team).slice(0, 6).map(x => ({
+    name: String(x.name), team: String(x.team), pos: String(x.pos || ''),
+    blurb: String(x.blurb || ''), facts: Array.isArray(x.facts) ? x.facts.slice(0, 3).map(String) : [],
+  }));
+  if (!stars.length) return { ok: false };
+  cacheSet(key, { stars });
+  return { ok: true, stars };
+}
+
 export default async function handler(req, res) {
   const action = String((req.query.action || '')).toLowerCase();
   let body = req.body;
@@ -187,6 +206,7 @@ export default async function handler(req, res) {
     if (action === 'team-star') return res.status(200).json(await doTeamStar(req.query));
     if (action === 'player-info') return res.status(200).json(await doPlayerInfo(req.query));
     if (action === 'scoop') return res.status(200).json(await doScoop(req.query));
+    if (action === 'league-stars') return res.status(200).json(await doLeagueStars(req.query));
     if (action === 'events') { res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400'); return res.status(200).json(await doEvents()); }
     return res.status(400).json({ error: 'unknown action' });
   } catch (err) {

@@ -653,6 +653,8 @@ const SEASON_CONTEXT = {
     upNext: [["Now", "Off-season"], ["August", "Preseason"], ["Sept 10", "Regular season kicks off"]] },
   WC:   { phase: "The Final", pct: 97, detail: "The tournament is down to two: Spain vs defending champions Argentina in the final, Sunday July 19 at MetLife Stadium.",
     upNext: [["Now", "Final: Spain vs Argentina"], ["Sun July 19", "World Cup Final · MetLife Stadium · Fox"]] },
+  EPL:  { phase: "Season Kickoff", pct: 3, detail: "The 2026-27 Premier League season kicks off in mid-to-late August — 20 clubs, 38 matches each through May, ranked by points.",
+    upNext: [["August", "Season kicks off"], ["January", "Winter transfer window + holiday fixtures"], ["May", "Final day — title, European spots & relegation decided"]] },
 };
 
 // Sport emoji per league — used on headlines everywhere
@@ -2848,6 +2850,19 @@ Question: ${q}`;
 
 const SPORT_101 = [
   {
+    league: "EPL",
+    headline: "English soccer's top flight — the Premier League",
+    season: "August → May · 38 games each",
+    progress: "Season just kicking off",
+    sections: [
+      { h: "How the league works", b: "20 clubs each play 38 matches (everyone home and away). There are no playoffs — 3 points for a win, 1 for a draw, 0 for a loss, and whoever has the most points by May is champion." },
+      { h: "Promotion & relegation", b: "The bottom 3 clubs get 'relegated' — dropped to the lower division — and 3 clubs come up to replace them. So even teams far from the title fight hard to avoid the drop." },
+      { h: "European spots", b: "Finishing near the top (roughly the top 5) earns a place in next season's Champions League — Europe's biggest club competition, a huge payday and prestige." },
+      { h: "No draft, no salary cap", b: "Unlike US leagues, clubs buy players from around the world during 'transfer windows' (summer and January). Rich clubs loading up on stars is a storyline all its own." },
+      { h: "Why casual fans love it", b: "Fast end-to-end games, passionate crowds, global superstars, and fierce rivalries (Arsenal–Tottenham, Man United–Liverpool). Games are on US mornings via Peacock and USA Network." },
+    ],
+  },
+  {
     league: "WNBA",
     headline: "Women's pro basketball — booming right now",
     season: "May → September · 44 games",
@@ -3073,6 +3088,8 @@ function SportsChatbot() {
 // Curated marquee events — the cultural moments a casual fan hears about.
 // dateKey = when it happens (used to hide past events); span = display text.
 const BIG_EVENTS = [
+  { dateKey: "2026-08-21", league: "EPL", title: "Premier League Kicks Off", span: "Mid-to-late August", where: "England", tv: "Peacock / USA",
+    note: "England's top soccer league is back for 2026-27 — 20 clubs, 38 games each, and the race for the title, Champions League spots, and survival begins." },
   { dateKey: "2026-07-19", league: "WC", title: "World Cup Final — Spain vs Argentina", span: "Sunday, July 19", where: "MetLife Stadium, NJ", tv: "Fox",
     note: "The whole planet watches this one. Spain chases their first title since 2010; Messi's Argentina tries to repeat as champions — the first team to do that since 1962." },
   { dateKey: "2026-07-25", league: "WNBA", title: "WNBA All-Star Game", span: "Saturday, July 25", where: "United Center, Chicago", tv: "ABC",
@@ -3137,23 +3154,42 @@ function NewsTab() {
       ) : articles.length === 0 ? (
         <div style={{ fontSize: 13, color: C.inkFaint, padding: "10px 2px" }}>No news available right now — check back soon.</div>
       ) : (
-        articles.map((a, i) => (
-          <a key={i} href={a.link} target="_blank" rel="noopener noreferrer" style={{
-            display: "flex", gap: 0, textDecoration: "none", background: C.surface,
-            border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden", marginBottom: 10,
+        <>
+          {/* Story of the day — the top headline, featured big */}
+          <a href={articles[0].link} target="_blank" rel="noopener noreferrer" style={{
+            display: "block", textDecoration: "none", background: C.surface,
+            border: `1px solid ${C.line}`, borderRadius: 14, overflow: "hidden", marginBottom: 14,
           }}>
-            {a.image
-              ? <img src={a.image} alt="" style={{ width: 104, height: 104, objectFit: "cover", flexShrink: 0 }} loading="lazy" />
-              : <div style={{ width: 6, background: lc, flexShrink: 0 }} />}
-            <div style={{ flex: 1, minWidth: 0, padding: "12px 14px" }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: C.ink, lineHeight: 1.35, marginBottom: 5 }}>{a.headline}</div>
-              {a.description && <div style={{ fontSize: 12.5, color: C.inkDim, lineHeight: 1.5, marginBottom: 6, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{a.description}</div>}
+            {articles[0].image && <img src={articles[0].image} alt="" style={{ width: "100%", height: 190, objectFit: "cover", display: "block" }} loading="lazy" />}
+            <div style={{ padding: "14px 16px" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", color: lc, marginBottom: 8 }}>🔥 TOP STORY</div>
+              <div style={{ fontSize: 17, fontWeight: 900, color: C.ink, lineHeight: 1.3, marginBottom: 6 }}>{articles[0].headline}</div>
+              {articles[0].description && <div style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 8 }}>{articles[0].description}</div>}
               <div style={{ fontSize: 11, color: lc, fontWeight: 700 }}>
-                {a.type ? `${a.type} · ` : ""}{timeAgo(a.published)} · Read on ESPN ↗
+                {articles[0].type ? `${articles[0].type} · ` : ""}{timeAgo(articles[0].published)} · Read on ESPN ↗
               </div>
             </div>
           </a>
-        ))
+
+          {/* The rest */}
+          {articles.slice(1).map((a, i) => (
+            <a key={i} href={a.link} target="_blank" rel="noopener noreferrer" style={{
+              display: "flex", gap: 0, textDecoration: "none", background: C.surface,
+              border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden", marginBottom: 10,
+            }}>
+              {a.image
+                ? <img src={a.image} alt="" style={{ width: 104, height: 104, objectFit: "cover", flexShrink: 0 }} loading="lazy" />
+                : <div style={{ width: 6, background: lc, flexShrink: 0 }} />}
+              <div style={{ flex: 1, minWidth: 0, padding: "12px 14px" }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: C.ink, lineHeight: 1.35, marginBottom: 5 }}>{a.headline}</div>
+                {a.description && <div style={{ fontSize: 12.5, color: C.inkDim, lineHeight: 1.5, marginBottom: 6, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{a.description}</div>}
+                <div style={{ fontSize: 11, color: lc, fontWeight: 700 }}>
+                  {a.type ? `${a.type} · ` : ""}{timeAgo(a.published)} · Read on ESPN ↗
+                </div>
+              </div>
+            </a>
+          ))}
+        </>
       )}
     </div>
   );
@@ -3747,6 +3783,56 @@ function ApiRosterList({ players, lc, league }) {
 }
 
 // Highlighted "player to watch" for teams without a curated star.
+// AI-sourced star card for leagues without curated data (EPL): headshot, bio,
+// bullet facts, and a Wikipedia link — mirrors the curated StarPlayerCard.
+function AiStarCard({ p, lc, league }) {
+  const [open, setOpen] = useState(false);
+  const [wiki, setWiki] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const toggle = async () => {
+    const willOpen = !open;
+    setOpen(willOpen);
+    if (willOpen && !wiki && !loading) { setLoading(true); setWiki(await fetchWiki(p.name, league)); setLoading(false); }
+  };
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderLeft: `4px solid ${lc}`, borderRadius: 10, padding: "14px 16px" }}>
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+        <PhotoAvatar name={p.name} team={p.team} league={league} size={54} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{p.name}</span>
+            <TeamLogo team={p.team} size={18} />
+            <span style={{ fontSize: 12, color: lc, fontWeight: 700 }}>{p.team}</span>
+            {p.pos && <span style={{ fontSize: 10, color: C.inkFaint, fontWeight: 600, border: `1px solid ${C.line}`, borderRadius: 3, padding: "1px 6px" }}>{p.pos}</span>}
+          </div>
+          {p.blurb && <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.6, margin: "0 0 8px" }}>{p.blurb}</p>}
+          {p.facts && p.facts.length > 0 && (
+            <div style={{ marginBottom: 6 }}>
+              {p.facts.map((f, i) => (
+                <div key={i} style={{ display: "flex", gap: 9, marginBottom: 5 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: lc, flexShrink: 0, marginTop: 6 }} />
+                  <span style={{ fontSize: 12.5, color: C.inkMid, lineHeight: 1.5 }}>{f}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <button onClick={toggle} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, fontWeight: 700, color: lc, fontFamily: "inherit" }}>{open ? "less ▴" : "read more ▾"}</button>
+          {open && (
+            <div style={{ marginTop: 8 }}>
+              {loading ? <div style={{ fontSize: 12, color: C.inkDim }}>Looking them up…</div> : (
+                <>
+                  {wiki && wiki.extract && <p style={{ fontSize: 12.5, color: C.inkMid, lineHeight: 1.55, margin: "0 0 9px" }}>{wiki.extract}</p>}
+                  <a href={(wiki && wiki.url) || `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(p.name)}`} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, background: lc, color: "#fff", padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700, textDecoration: "none" }}>Read on Wikipedia ↗</a>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FeaturedPlayerCard({ name, blurb, photo, league, lc }) {
   const [open, setOpen] = useState(false);
   const [wiki, setWiki] = useState(null);
@@ -3857,6 +3943,20 @@ function PlayersTab({ target }) {
   const [selectedPlayer, setSelectedPlayer] = useState(null); // for detail overlay
   const [teamsByLeague, setTeamsByLeague] = useState({}); // full team lists from the API
   const [teamRoster, setTeamRoster] = useState({ league: null, team: null, loading: false, players: [] });
+  const [leagueStars, setLeagueStars] = useState({}); // AI-picked stars for leagues without curated data (e.g. EPL)
+
+  // For a league with no curated stars, fetch a few notable players to feature.
+  useEffect(() => {
+    if (!openLeague) return;
+    const curated = (PLAYERS[openLeague] && PLAYERS[openLeague].stars) || [];
+    if (curated.length || leagueStars[openLeague]) return;
+    let cancelled = false;
+    fetch(`/api/ai?action=league-stars&league=${encodeURIComponent(openLeague)}`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled && j && j.ok && Array.isArray(j.stars)) setLeagueStars(m => ({ ...m, [openLeague]: j.stars })); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [openLeague, leagueStars]);
 
   // A "Learn about this team →" deep-link from a game card: open that league and
   // filter to the team (the roster loads from the API, so any team works now).
@@ -4008,7 +4108,16 @@ function PlayersTab({ target }) {
                   ))}
                 </div>
 
-                {/* Leagues with no curated stars (e.g. EPL) → let users browse teams */}
+                {/* Leagues with no curated stars (e.g. EPL) → AI-picked stars + browse teams */}
+                {teamFilter === "ALL" && data.stars.length === 0 && (leagueStars[lg] && leagueStars[lg].length > 0) && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>⭐ STARS TO WATCH</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+                      {leagueStars[lg].map(p => <AiStarCard key={p.name} p={p} lc={lc} league={lg} />)}
+                    </div>
+                  </>
+                )}
+
                 {teamFilter === "ALL" && data.stars.length === 0 && apiTeams && apiTeams.length > 0 && (
                   <>
                     <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>👥 BROWSE TEAMS</div>
@@ -4091,13 +4200,15 @@ function PlayersTab({ target }) {
                     <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>🎯 COACHES</div>
                     <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden", marginBottom: 20 }}>
                       {coaches.map((c, i) => (
-                        <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 14px", borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}` }}>
+                        <div key={c.name} onClick={() => setSelectedPlayer({ name: c.name, team: c.team, pos: c.role || "Coach", league: lg, isCoach: true })}
+                          style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 14px", borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}`, cursor: "pointer" }}>
                           <TeamLogo team={c.team} size={26} />
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{c.name}</div>
                             <div style={{ fontSize: 11, color: C.inkFaint }}>{c.team}</div>
                           </div>
                           <span style={{ fontSize: 10, color: C.inkDim, fontWeight: 700, background: C.lineSoft, borderRadius: 4, padding: "3px 8px" }}>{c.role}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: lc }}>›</span>
                         </div>
                       ))}
                     </div>
