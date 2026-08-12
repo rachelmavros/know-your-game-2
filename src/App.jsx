@@ -3111,29 +3111,89 @@ function NewsTab() {
 
 function EventsTab() {
   const today = todayKey();
-  const upcoming = BIG_EVENTS.filter(e => e.dateKey >= today);
+  const [aiEvents, setAiEvents] = useState([]);
+  const [filter, setFilter] = useState("ALL");
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/events")
+      .then(r => r.json())
+      .then(j => { if (!cancelled && Array.isArray(j.events)) setAiEvents(j.events); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Merge curated + auto-refreshed, de-dupe by title, keep upcoming, sort by date.
+  const seen = new Set();
+  const merged = [...BIG_EVENTS, ...aiEvents]
+    .filter(e => {
+      if (!e.dateKey || e.dateKey < today) return false;
+      const k = (e.title || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 24);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+
+  const leaguesPresent = [...new Set(merged.map(e => e.league))];
+  const upcoming = merged.filter(e => filter === "ALL" || e.league === filter);
+
+  // Days until an event, for the countdown chip.
+  const daysUntil = dk => {
+    const d = new Date(dk + "T12:00:00");
+    return Math.max(0, Math.round((d.getTime() - Date.now()) / 86400000));
+  };
+  const countdown = dk => {
+    const n = daysUntil(dk);
+    if (n === 0) return "Today";
+    if (n === 1) return "Tomorrow";
+    if (n < 14) return `In ${n} days`;
+    if (n < 60) return `In ${Math.round(n / 7)} weeks`;
+    return `In ${Math.round(n / 30)} months`;
+  };
+
   return (
     <div>
       <div style={{ fontSize: 20, fontWeight: 900, color: C.ink, marginBottom: 6 }}>📅 Big Events Coming Up</div>
-      <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 12 }}>
+      <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 14 }}>
         The marquee moments on the sports calendar — the ones people talk about even if they don't follow the games.
       </p>
-      <UpdatedNote label="Events" />
+
+      {/* League filter */}
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 16, paddingBottom: 2 }}>
+        {["ALL", ...leaguesPresent].map(lg => (
+          <button key={lg} onClick={() => setFilter(lg)} style={{
+            flexShrink: 0, padding: "6px 13px", borderRadius: 16, cursor: "pointer",
+            background: filter === lg ? (LEAGUE_COLORS[lg] || C.ink) : "transparent",
+            color: filter === lg ? "#fff" : C.inkFaint, fontSize: 12, fontWeight: 700, fontFamily: "inherit",
+            border: `1px solid ${filter === lg ? (LEAGUE_COLORS[lg] || C.ink) : C.line}`,
+          }}>{lg === "ALL" ? "All" : `${SPORT_EMOJI[lg] || ""} ${lg}`}</button>
+        ))}
+      </div>
+
+      {upcoming.length === 0 && (
+        <div style={{ fontSize: 13, color: C.inkFaint, padding: "10px 2px" }}>No upcoming events for this filter.</div>
+      )}
+
       {upcoming.map((e, i) => {
         const lc = LEAGUE_COLORS[e.league] || C.red;
-        const isNext = i === 0;
+        const isNext = i === 0 && filter === "ALL";
         return (
-          <div key={e.title} style={{
+          <div key={`${e.title}-${e.dateKey}`} style={{
             background: isNext ? "#15202B" : C.surface,
             border: isNext ? "none" : `1px solid ${C.line}`,
             borderRadius: 12, padding: "16px 18px", marginBottom: 12,
             color: isNext ? "#fff" : C.ink,
           }}>
-            {isNext && (
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>
-                ⭐ UP NEXT
-              </div>
-            )}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+              {isNext
+                ? <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", color: "rgba(255,255,255,0.6)" }}>⭐ UP NEXT</span>
+                : <span />}
+              <span style={{
+                fontSize: 11, fontWeight: 800, padding: "3px 9px", borderRadius: 20,
+                background: isNext ? "rgba(255,255,255,0.15)" : lc + "15",
+                color: isNext ? "#fff" : lc,
+              }}>⏱ {countdown(e.dateKey)}</span>
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
               <span style={{ fontSize: 17 }}>{SPORT_EMOJI[e.league]}</span>
               <span style={{ fontSize: 15.5, fontWeight: 800 }}>{e.title}</span>
@@ -3141,9 +3201,11 @@ function EventsTab() {
             <div style={{ fontSize: 12, fontWeight: 700, color: isNext ? "rgba(255,255,255,0.75)" : lc, marginBottom: 8 }}>
               {e.span}{e.where ? ` · ${e.where}` : ""}{e.tv ? ` · 📺 ${e.tv}` : ""}
             </div>
-            <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, color: isNext ? "rgba(255,255,255,0.85)" : C.inkDim }}>
-              {e.note}
-            </p>
+            {e.note && (
+              <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, color: isNext ? "rgba(255,255,255,0.85)" : C.inkDim }}>
+                {e.note}
+              </p>
+            )}
           </div>
         );
       })}
