@@ -4008,6 +4008,24 @@ function PlayersTab({ target }) {
                   ))}
                 </div>
 
+                {/* Leagues with no curated stars (e.g. EPL) → let users browse teams */}
+                {teamFilter === "ALL" && data.stars.length === 0 && apiTeams && apiTeams.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>👥 BROWSE TEAMS</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
+                      {apiTeams.map(t => (
+                        <button key={t.id} onClick={() => setTeamFilter(t.name)} style={{
+                          display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", cursor: "pointer",
+                          background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, fontFamily: "inherit", textAlign: "left",
+                        }}>
+                          {t.logo ? <img src={t.logo} alt="" width={22} height={22} style={{ flexShrink: 0 }} loading="lazy" /> : <TeamLogo team={t.name} size={22} />}
+                          <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+
                 {/* The Scoop — fun public storylines for the selected team */}
                 {teamFilter !== "ALL" && scoop.team === teamFilter && scoop.bullets.length > 0 && (
                   <div style={{ background: lc + "0E", border: `1px solid ${lc}33`, borderRadius: 10, padding: "12px 14px", marginBottom: 18 }}>
