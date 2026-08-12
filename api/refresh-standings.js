@@ -6,7 +6,7 @@
 
 export const config = { maxDuration: 30 };
 
-const ESPN = { WNBA: 'basketball/wnba', MLB: 'baseball/mlb', NBA: 'basketball/nba', NFL: 'football/nfl' };
+const ESPN = { WNBA: 'basketball/wnba', MLB: 'baseball/mlb', NBA: 'basketball/nba', NFL: 'football/nfl', EPL: 'soccer/eng.1' };
 
 function statVal(stats, names) {
   for (const n of names) {
@@ -26,6 +26,9 @@ function collectEntries(node, arr) {
         team: e.team && (e.team.displayName || e.team.name),
         w: statVal(stats, ['wins']),
         l: statVal(stats, ['losses']),
+        d: statVal(stats, ['ties']),
+        pts: statVal(stats, ['points']),
+        played: statVal(stats, ['gamesPlayed']),
         div: node.name || '',
       });
     }
@@ -115,6 +118,19 @@ async function buildWnba() {
   return rankRows(all);
 }
 
+// Premier League: one table ranked by POINTS (3 for a win, 1 for a draw).
+async function buildEpl() {
+  const groups = await espnGrouped(ESPN.EPL);
+  if (!groups) return [];
+  const all = [];
+  for (const rows of Object.values(groups)) all.push(...rows);
+  const seen = new Set();
+  const out = all
+    .filter(t => { if (!t.team || seen.has(t.team) || !Number.isFinite(t.pts)) return false; seen.add(t.team); return true; })
+    .sort((a, b) => b.pts - a.pts || (b.w - a.w));
+  return out.map((t, i) => ({ rank: i + 1, team: t.team, conf: '', w: t.w, d: t.d, l: t.l, pts: t.pts, played: t.played }));
+}
+
 export default async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) {
@@ -134,13 +150,15 @@ export default async function handler(req, res) {
   await tryBuild('mlb', () => buildGrouped('MLB'));
   await tryBuild('nba', () => buildGrouped('NBA'));
   await tryBuild('nfl', () => buildGrouped('NFL'));
+  await tryBuild('epl', buildEpl);
 
   counts.wnba = (value.wnba || []).length;
+  counts.epl = (value.epl || []).length;
   for (const k of ['mlb', 'nba', 'nfl']) counts[k] = value[k] ? Object.fromEntries(Object.entries(value[k]).map(([c, r]) => [c, r.length])) : null;
 
   if (debug) return res.status(200).json({ ok: true, debug: true, counts, value });
 
-  const anything = (value.wnba || []).length || value.mlb || value.nba || value.nfl;
+  const anything = (value.wnba || []).length || value.mlb || value.nba || value.nfl || (value.epl || []).length;
   if (!anything) return res.status(200).json({ ok: false, error: 'No standings parsed', counts });
 
   const up = await fetch(`${supabaseUrl}/rest/v1/app_cache?on_conflict=key`, {

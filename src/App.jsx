@@ -375,8 +375,9 @@ const LEAGUE_COLORS = {
   NHL:  "#0E7C9D",   // teal
   MLS:  "#6B4FBB",   // purple
   WC:   "#0E8C5A",   // World Cup green
+  EPL:  "#3D195B",   // Premier League purple
 };
-const LEAGUE_SPORT = { WNBA:"Basketball", NBA:"Basketball", MLB:"Baseball", NFL:"Football", NHL:"Hockey", MLS:"Soccer", WC:"Soccer · World Cup" };
+const LEAGUE_SPORT = { WNBA:"Basketball", NBA:"Basketball", MLB:"Baseball", NFL:"Football", NHL:"Hockey", MLS:"Soccer", WC:"Soccer · World Cup", EPL:"Soccer · Premier League" };
 
 const VERDICT = {
   5: { label: "MUST WATCH",      bg: "#C8102E", text: "#fff" },
@@ -611,7 +612,7 @@ const SEASON_CONTEXT = {
 };
 
 // Sport emoji per league — used on headlines everywhere
-const SPORT_EMOJI = { WNBA: "🏀", NBA: "🏀", MLB: "⚾", NFL: "🏈", NHL: "🏒", MLS: "⚽", WC: "⚽" };
+const SPORT_EMOJI = { WNBA: "🏀", NBA: "🏀", MLB: "⚾", NFL: "🏈", NHL: "🏒", MLS: "⚽", WC: "⚽", EPL: "⚽" };
 
 // Team color accents for logo badges (monogram discs). Keyed by full team name.
 const TEAM_COLORS = {
@@ -728,6 +729,11 @@ const NBA_BRACKET = {
 // Standings for every league. `playoffCut` = how many teams make the playoffs (for the cut line).
 // `status` set when a league isn't in active play, which renders a status card instead of a table.
 const STANDINGS = {
+  EPL: {
+    emoji: "⚽", label: "Premier League Table",
+    blurb: "England's top soccer division — 20 clubs ranked by points (3 for a win, 1 for a draw). The top few qualify for Europe's Champions League.",
+    cols: ["PTS", "PLAYED"], playoffCut: 0,
+  },
   WNBA: {
     emoji: "🏀", label: "WNBA Playoff Picture", playoffCut: 8,
     blurb: "The top 8 teams make the playoffs — seeded by record across the whole league, not by conference. The dashed line marks the cut.",
@@ -899,6 +905,7 @@ const WC_GROUPS = {
 // Players per league. Each league has a coach list, marquee "stars" (with deep info),
 // and a wider roster of role players shown after filtering by team.
 const PLAYERS = {
+  EPL: { stars: [], roster: [], coaches: [] },
   WNBA: {
     stars: [
       { name: "Caitlin Clark", team: "Indiana Fever", pos: "Guard", debut: 2024, note: "The biggest name in the sport. A deep-range shooter and electric passer who's brought millions of new fans to the WNBA.",
@@ -1182,6 +1189,11 @@ function Toggle({ on, onChange }) {
 // Default ways to watch per league (used when a game has no specific channel,
 // e.g. live API games). Real, clickable streaming/broadcast links.
 const LEAGUE_WATCH = {
+  EPL: [
+    { name: "Peacock", url: "https://www.peacocktv.com/" },
+    { name: "USA Network", url: "https://www.usanetwork.com/live" },
+    { name: "Fubo", url: "https://www.fubo.tv" },
+  ],
   WNBA: [
     { name: "League Pass", url: "https://www.wnba.com/leaguepass" },
     { name: "ESPN", url: "https://www.espn.com/watch/" },
@@ -3040,7 +3052,7 @@ const BIG_EVENTS = [
 ];
 
 function NewsTab() {
-  const leagues = ["WNBA", "NBA", "MLB", "NFL", "NHL"];
+  const leagues = ["WNBA", "NBA", "MLB", "NFL", "EPL", "NHL"];
   const [league, setLeague] = useState("WNBA");
   const [articles, setArticles] = useState(null); // null = loading
   useEffect(() => {
@@ -3244,7 +3256,7 @@ function SeriesBox({ s }) {
 const STANDINGS_UPDATED = "July 15, 2026 · 9:00 AM CT";
 
 function StandingsTab() {
-  const leagues = ["WNBA", "NBA", "MLB", "NFL", "MLS", "NHL"];
+  const leagues = ["WNBA", "NBA", "MLB", "NFL", "EPL", "MLS", "NHL"];
   const [view, setView] = useState("WNBA");
   const lc = LEAGUE_COLORS[view];
 
@@ -3449,8 +3461,10 @@ function StandingsTab() {
           </div>
         </>
       ) : liveIsTable ? (
-        renderTable(liveData, PLAYOFF_CUT[view] || 0, ["W–L", "GB"],
-          view === "WNBA" ? "Green = currently in the playoffs. GB = games behind the leader." : null)
+        renderTable(liveData, PLAYOFF_CUT[view] || 0,
+          view === "EPL" ? ["PTS", "PLAYED"] : ["W–L", "GB"],
+          view === "WNBA" ? "Green = currently in the playoffs. GB = games behind the leader."
+            : view === "EPL" ? "Ranked by points (3 for a win, 1 for a draw). The top clubs qualify for the Champions League." : null)
       ) : (
         s.rows && renderTable(
           s.rows, s.playoffCut, s.cols,

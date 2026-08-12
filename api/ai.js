@@ -10,7 +10,7 @@ export const config = { maxDuration: 30 };
 
 const SB_URL = () => process.env.SUPABASE_URL;
 const SB_KEY = () => process.env.SUPABASE_ANON_KEY;
-const LEAGUE_PATH = { WNBA: 'basketball/wnba', NBA: 'basketball/nba', MLB: 'baseball/mlb', NFL: 'football/nfl', NHL: 'hockey/nhl' };
+const LEAGUE_PATH = { WNBA: 'basketball/wnba', NBA: 'basketball/nba', MLB: 'baseball/mlb', NFL: 'football/nfl', NHL: 'hockey/nhl', EPL: 'soccer/eng.1' };
 
 async function cacheGet(key) {
   if (!SB_URL() || !SB_KEY()) return null;
