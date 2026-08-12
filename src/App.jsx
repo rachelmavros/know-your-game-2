@@ -1519,15 +1519,11 @@ function MatchupBreakdown({ game }) {
     } catch { setState("error"); }
   };
 
-  // Compact chip: team logo + name, taps through to the Players tab.
   const teamBtn = (label) => (
     <button key={label} onClick={() => NAV_VIEW_TEAM && NAV_VIEW_TEAM(game.league, label)} style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
-      background: lc + "12", color: lc, border: "none", borderRadius: 20,
-      padding: "4px 10px 4px 5px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-    }}>
-      <TeamLogo team={label} size={15} />{label} ›
-    </button>
+      background: "transparent", color: lc, border: `1px solid ${lc}`, borderRadius: 6,
+      padding: "6px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+    }}>Learn about {label} →</button>
   );
 
   return (
@@ -1553,8 +1549,7 @@ function MatchupBreakdown({ game }) {
           Couldn't load the breakdown. <span onClick={analyze} style={{ color: lc, textDecoration: "underline", cursor: "pointer" }}>Try again</span>.
         </p>
       )}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2, alignItems: "center" }}>
-        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", color: C.inkFaint }}>TEAMS ›</span>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
         {teamBtn(game.away)}
         {teamBtn(game.home)}
       </div>
