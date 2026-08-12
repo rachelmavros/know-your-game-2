@@ -735,12 +735,23 @@ const ESPN_LOGO = {
 };
 
 // Returns a real image URL for a team, or null if none known.
+// Runtime logo map, filled from live API data (standings/team lists) so leagues
+// not in the static ESPN_LOGO map (e.g. Premier League) still get real crests.
+const RUNTIME_LOGO = {};
+const normTeamName = s => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+function registerLogos(pairs) {
+  // pairs: array of [teamName, logoUrl]
+  for (const [name, url] of pairs) { if (name && url) RUNTIME_LOGO[normTeamName(name)] = url; }
+}
+
 function teamImageUrl(team) {
   if (NATION_FLAG[team]) return `https://flagcdn.com/h120/${NATION_FLAG[team]}.png`;
   if (ESPN_LOGO[team]) {
     const [lg, code] = ESPN_LOGO[team];
     return `https://a.espncdn.com/i/teamlogos/${lg}/500/${code}.png`;
   }
+  const rl = RUNTIME_LOGO[normTeamName(team)];
+  if (rl) return rl;
   return null;
 }
 
@@ -3129,6 +3140,13 @@ function NewsTab() {
   };
 
   const lc = LEAGUE_COLORS[league];
+  // Featured "Top Story": ESPN orders the feed by editorial prominence (their
+  // own top story first), so we take the first real article — skipping video
+  // highlights/recaps so the banner is an actual story, not a clip.
+  const featured = articles && articles.length
+    ? (articles.find(a => a.type !== "Media" && a.type !== "Media Item" && !/\bhighlights?\b/i.test(a.headline)) || articles[0])
+    : null;
+  const rest = featured ? articles.filter(a => a !== featured) : [];
   return (
     <div>
       <div style={{ fontSize: 20, fontWeight: 900, color: C.ink, marginBottom: 6 }}>📰 Latest News</div>
@@ -3156,23 +3174,23 @@ function NewsTab() {
       ) : (
         <>
           {/* Story of the day — the top headline, featured big */}
-          <a href={articles[0].link} target="_blank" rel="noopener noreferrer" style={{
+          <a href={featured.link} target="_blank" rel="noopener noreferrer" style={{
             display: "block", textDecoration: "none", background: C.surface,
             border: `1px solid ${C.line}`, borderRadius: 14, overflow: "hidden", marginBottom: 14,
           }}>
-            {articles[0].image && <img src={articles[0].image} alt="" style={{ width: "100%", height: 190, objectFit: "cover", display: "block" }} loading="lazy" />}
+            {featured.image && <img src={featured.image} alt="" style={{ width: "100%", height: 190, objectFit: "cover", display: "block" }} loading="lazy" />}
             <div style={{ padding: "14px 16px" }}>
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", color: lc, marginBottom: 8 }}>🔥 TOP STORY</div>
-              <div style={{ fontSize: 17, fontWeight: 900, color: C.ink, lineHeight: 1.3, marginBottom: 6 }}>{articles[0].headline}</div>
-              {articles[0].description && <div style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 8 }}>{articles[0].description}</div>}
+              <div style={{ fontSize: 17, fontWeight: 900, color: C.ink, lineHeight: 1.3, marginBottom: 6 }}>{featured.headline}</div>
+              {featured.description && <div style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 8 }}>{featured.description}</div>}
               <div style={{ fontSize: 11, color: lc, fontWeight: 700 }}>
-                {articles[0].type ? `${articles[0].type} · ` : ""}{timeAgo(articles[0].published)} · Read on ESPN ↗
+                {featured.type ? `${featured.type} · ` : ""}{timeAgo(featured.published)} · Read on ESPN ↗
               </div>
             </div>
           </a>
 
           {/* The rest */}
-          {articles.slice(1).map((a, i) => (
+          {rest.map((a, i) => (
             <a key={i} href={a.link} target="_blank" rel="noopener noreferrer" style={{
               display: "flex", gap: 0, textDecoration: "none", background: C.surface,
               border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden", marginBottom: 10,
@@ -3285,12 +3303,19 @@ function EventsTab() {
               <span style={{ fontSize: 15.5, fontWeight: 800 }}>{e.title}</span>
             </div>
             <div style={{ fontSize: 12, fontWeight: 700, color: isNext ? "rgba(255,255,255,0.75)" : lc, marginBottom: 8 }}>
-              {e.span}{e.where ? ` · ${e.where}` : ""}{e.tv ? ` · 📺 ${e.tv}` : ""}
+              🗓 {e.span}{e.where ? ` · ${e.where}` : ""}
             </div>
             {e.note && (
-              <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, color: isNext ? "rgba(255,255,255,0.85)" : C.inkDim }}>
+              <p style={{ fontSize: 13, lineHeight: 1.6, margin: "0 0 12px", color: isNext ? "rgba(255,255,255,0.85)" : C.inkDim }}>
                 {e.note}
               </p>
+            )}
+            {e.tv && (
+              <a href={netUrl(e.tv) || `https://www.google.com/search?q=${encodeURIComponent(`watch ${e.tv} live`)}`} target="_blank" rel="noopener noreferrer" style={{
+                display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none",
+                background: isNext ? "rgba(255,255,255,0.15)" : lc, color: "#fff",
+                padding: "7px 13px", borderRadius: 7, fontSize: 12, fontWeight: 700,
+              }}>▶ Watch on {e.tv}</a>
             )}
           </div>
         );
@@ -3342,7 +3367,17 @@ function StandingsTab() {
     let cancelled = false;
     fetch("/api/standings")
       .then(r => r.json())
-      .then(j => { if (!cancelled && j.data) { setLiveStandings(j.data); setLiveUpdated(j.updated_at); } })
+      .then(j => {
+        if (cancelled || !j.data) return;
+        // Feed real crest logos (esp. EPL) into the shared logo map.
+        const pairs = [];
+        Object.values(j.data).forEach(v => {
+          if (Array.isArray(v)) v.forEach(r => r.logo && pairs.push([r.team, r.logo]));
+          else if (v && typeof v === "object") Object.values(v).forEach(arr => Array.isArray(arr) && arr.forEach(r => r.logo && pairs.push([r.team, r.logo])));
+        });
+        registerLogos(pairs);
+        setLiveStandings(j.data); setLiveUpdated(j.updated_at);
+      })
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
@@ -3729,55 +3764,27 @@ function CoachAvatar({ name, team, league, lc }) {
 }
 
 // One roster player row: tap "see more" to read a Wikipedia blurb + open the article.
-function RosterPlayerRow({ p, lc, league, first }) {
-  const [open, setOpen] = useState(false);
-  const [wiki, setWiki] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const toggle = async () => {
-    const willOpen = !open;
-    setOpen(willOpen);
-    if (willOpen && !wiki && !loading) {
-      setLoading(true);
-      setWiki(await fetchWiki(p.name, league));
-      setLoading(false);
-    }
-  };
+// One roster row — tapping opens the shared player detail modal (same rich
+// layout as clicking any other player).
+function RosterPlayerRow({ p, lc, league, team, first, onSelect }) {
   return (
-    <div style={{ borderTop: first ? "none" : `1px solid ${C.lineSoft}` }}>
-      <div onClick={toggle} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", cursor: "pointer" }}>
-        <Headshot src={p.headshot} name={p.name} size={36} lc={lc} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{p.name}{p.jersey ? <span style={{ color: C.inkFaint, fontWeight: 600 }}>{` · #${p.jersey}`}</span> : ""}</div>
-          <div style={{ fontSize: 11, color: C.inkFaint }}>{[p.pos, p.age ? `Age ${p.age}` : ""].filter(Boolean).join(" · ")}</div>
-        </div>
-        <span style={{ fontSize: 11, fontWeight: 700, color: lc, flexShrink: 0 }}>{open ? "less ▴" : "see more ▾"}</span>
+    <div onClick={() => onSelect && onSelect({ name: p.name, team, pos: p.pos, headshot: p.headshot, league })}
+      style={{ borderTop: first ? "none" : `1px solid ${C.lineSoft}`, display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", cursor: "pointer" }}>
+      <Headshot src={p.headshot} name={p.name} size={36} lc={lc} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{p.name}{p.jersey ? <span style={{ color: C.inkFaint, fontWeight: 600 }}>{` · #${p.jersey}`}</span> : ""}</div>
+        <div style={{ fontSize: 11, color: C.inkFaint }}>{[p.pos, p.age ? `Age ${p.age}` : ""].filter(Boolean).join(" · ")}</div>
       </div>
-      {open && (
-        <div style={{ padding: "0 14px 13px 61px" }}>
-          {loading ? (
-            <div style={{ fontSize: 12, color: C.inkDim }}>Looking them up…</div>
-          ) : (
-            <>
-              {wiki && wiki.extract
-                ? <p style={{ fontSize: 12.5, color: C.inkMid, lineHeight: 1.55, margin: "0 0 9px" }}>{wiki.extract}</p>
-                : <p style={{ fontSize: 12.5, color: C.inkFaint, margin: "0 0 9px" }}>No summary found — open Wikipedia to search.</p>}
-              <a href={(wiki && wiki.url) || `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(p.name)}`} target="_blank" rel="noopener noreferrer" style={{
-                display: "inline-flex", alignItems: "center", gap: 5, background: lc, color: "#fff",
-                padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700, textDecoration: "none",
-              }}>Read on Wikipedia ↗</a>
-            </>
-          )}
-        </div>
-      )}
+      <span style={{ fontSize: 11, fontWeight: 700, color: lc, flexShrink: 0 }}>see more ›</span>
     </div>
   );
 }
 
-// Full roster (from /api/players) with headshots + per-player Wikipedia.
-function ApiRosterList({ players, lc, league }) {
+// Full roster (from /api/players) with headshots; each row opens the detail modal.
+function ApiRosterList({ players, lc, league, team, onSelect }) {
   return (
     <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
-      {players.map((p, i) => <RosterPlayerRow key={`${p.name}-${i}`} p={p} lc={lc} league={league} first={i === 0} />)}
+      {players.map((p, i) => <RosterPlayerRow key={`${p.name}-${i}`} p={p} lc={lc} league={league} team={team} first={i === 0} onSelect={onSelect} />)}
     </div>
   );
 }
@@ -3944,6 +3951,7 @@ function PlayersTab({ target }) {
   const [teamsByLeague, setTeamsByLeague] = useState({}); // full team lists from the API
   const [teamRoster, setTeamRoster] = useState({ league: null, team: null, loading: false, players: [] });
   const [leagueStars, setLeagueStars] = useState({}); // AI-picked stars for leagues without curated data (e.g. EPL)
+  const [showTeamGrid, setShowTeamGrid] = useState(false); // expandable "browse all teams" picker
 
   // For a league with no curated stars, fetch a few notable players to feature.
   useEffect(() => {
@@ -3972,7 +3980,12 @@ function PlayersTab({ target }) {
     let cancelled = false;
     fetch(`/api/players?league=${encodeURIComponent(openLeague)}`)
       .then(r => r.json())
-      .then(j => { if (!cancelled) setTeamsByLeague(m => ({ ...m, [openLeague]: Array.isArray(j.teams) ? j.teams : [] })); })
+      .then(j => {
+        if (cancelled) return;
+        const teams = Array.isArray(j.teams) ? j.teams : [];
+        registerLogos(teams.map(t => [t.name, t.logo]));
+        setTeamsByLeague(m => ({ ...m, [openLeague]: teams }));
+      })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [openLeague, teamsByLeague]);
@@ -4022,6 +4035,7 @@ function PlayersTab({ target }) {
   const drillInto = (lg) => {
     setOpenLeague(lg === openLeague ? null : lg);
     setTeamFilter("ALL");
+    setShowTeamGrid(false);
   };
 
   return (
@@ -4092,21 +4106,38 @@ function PlayersTab({ target }) {
 
             {isOpen && (
               <div style={{ padding: "14px 16px 18px" }}>
-                {/* Team filter strip */}
-                <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 18, paddingBottom: 2 }}>
-                  {["ALL", ...allTeams].map(t => (
-                    <button key={t} onClick={() => setTeamFilter(t)} style={{
-                      flexShrink: 0, padding: "6px 12px", borderRadius: 16, cursor: "pointer",
-                      display: "inline-flex", alignItems: "center", gap: 5,
-                      background: teamFilter === t ? lc + "18" : "transparent",
-                      color: teamFilter === t ? lc : C.inkFaint, fontSize: 12, fontWeight: 600,
-                      border: `1px solid ${teamFilter === t ? lc : C.line}`, fontFamily: "inherit",
-                    }}>
-                      {t !== "ALL" && <TeamLogo team={t} size={14} />}
-                      {t === "ALL" ? "All Teams" : t}
-                    </button>
-                  ))}
+                {/* Team filter — compact row + a "browse all" grid picker */}
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
+                  <button onClick={() => { setTeamFilter("ALL"); setShowTeamGrid(false); }} style={{
+                    padding: "6px 12px", borderRadius: 16, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+                    background: teamFilter === "ALL" ? lc + "18" : "transparent", color: teamFilter === "ALL" ? lc : C.inkFaint,
+                    border: `1px solid ${teamFilter === "ALL" ? lc : C.line}`,
+                  }}>All Teams</button>
+                  {teamFilter !== "ALL" && (
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 16,
+                      background: lc + "18", color: lc, fontSize: 12, fontWeight: 700, border: `1px solid ${lc}`,
+                    }}><TeamLogo team={teamFilter} size={14} />{teamFilter}</span>
+                  )}
+                  <button onClick={() => setShowTeamGrid(v => !v)} style={{
+                    display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 16, cursor: "pointer",
+                    background: "transparent", color: C.inkDim, fontSize: 12, fontWeight: 700, fontFamily: "inherit", border: `1px solid ${C.line}`,
+                  }}>⊞ {showTeamGrid ? "Hide teams" : "Browse teams"}</button>
                 </div>
+
+                {showTeamGrid && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8, marginBottom: 16 }}>
+                    {(apiTeams && apiTeams.length ? apiTeams : allTeams.map(n => ({ id: n, name: n }))).map(t => (
+                      <button key={t.id || t.name} onClick={() => { setTeamFilter(t.name); setShowTeamGrid(false); }} style={{
+                        display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", cursor: "pointer",
+                        background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, fontFamily: "inherit", textAlign: "left",
+                      }}>
+                        <TeamLogo team={t.name} size={22} />
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* Leagues with no curated stars (e.g. EPL) → AI-picked stars + browse teams */}
                 {teamFilter === "ALL" && data.stars.length === 0 && (leagueStars[lg] && leagueStars[lg].length > 0) && (
@@ -4114,23 +4145,6 @@ function PlayersTab({ target }) {
                     <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>⭐ STARS TO WATCH</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
                       {leagueStars[lg].map(p => <AiStarCard key={p.name} p={p} lc={lc} league={lg} />)}
-                    </div>
-                  </>
-                )}
-
-                {teamFilter === "ALL" && data.stars.length === 0 && apiTeams && apiTeams.length > 0 && (
-                  <>
-                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>👥 BROWSE TEAMS</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
-                      {apiTeams.map(t => (
-                        <button key={t.id} onClick={() => setTeamFilter(t.name)} style={{
-                          display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", cursor: "pointer",
-                          background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, fontFamily: "inherit", textAlign: "left",
-                        }}>
-                          {t.logo ? <img src={t.logo} alt="" width={22} height={22} style={{ flexShrink: 0 }} loading="lazy" /> : <TeamLogo team={t.name} size={22} />}
-                          <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
-                        </button>
-                      ))}
                     </div>
                   </>
                 )}
@@ -4226,7 +4240,7 @@ function PlayersTab({ target }) {
                         Loading the full roster…
                       </div>
                     ) : (teamRoster.team === teamFilter && teamRoster.players.length) ? (
-                      <ApiRosterList players={teamRoster.players} lc={lc} league={lg} />
+                      <ApiRosterList players={teamRoster.players} lc={lc} league={lg} team={teamFilter} onSelect={setSelectedPlayer} />
                     ) : (
                       <div style={{ fontSize: 12.5, color: C.inkFaint, padding: "6px 2px" }}>Roster isn't available for this team right now.</div>
                     )}

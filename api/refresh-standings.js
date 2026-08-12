@@ -24,6 +24,7 @@ function collectEntries(node, arr) {
       const stats = e.stats || [];
       arr.push({
         team: e.team && (e.team.displayName || e.team.name),
+        logo: (e.team && e.team.logos && e.team.logos[0] && e.team.logos[0].href) || '',
         w: statVal(stats, ['wins']),
         l: statVal(stats, ['losses']),
         d: statVal(stats, ['ties']),
@@ -66,12 +67,12 @@ function rankRows(rows) {
       seen.add(t.team);
       return true;
     })
-    .map(t => ({ team: String(t.team), w: t.w, l: t.l, conf: t.conf || '' }))
+    .map(t => ({ team: String(t.team), logo: t.logo || '', w: t.w, l: t.l, conf: t.conf || '' }))
     .sort((a, b) => (b.w - b.l) - (a.w - a.l) || b.w - a.w);
   if (!out.length) return [];
   const lead = out[0];
   return out.map((t, i) => ({
-    rank: i + 1, team: t.team, conf: t.conf, w: t.w, l: t.l,
+    rank: i + 1, team: t.team, logo: t.logo, conf: t.conf, w: t.w, l: t.l,
     gb: i === 0 ? '—' : (((lead.w - t.w) + (t.l - lead.l)) / 2).toFixed(1),
   }));
 }
@@ -128,7 +129,7 @@ async function buildEpl() {
   const out = all
     .filter(t => { if (!t.team || seen.has(t.team) || !Number.isFinite(t.pts)) return false; seen.add(t.team); return true; })
     .sort((a, b) => b.pts - a.pts || (b.w - a.w));
-  return out.map((t, i) => ({ rank: i + 1, team: t.team, conf: '', w: t.w, d: t.d, l: t.l, pts: t.pts, played: t.played }));
+  return out.map((t, i) => ({ rank: i + 1, team: t.team, logo: t.logo || '', conf: '', w: t.w, d: t.d, l: t.l, pts: t.pts, played: t.played }));
 }
 
 export default async function handler(req, res) {
