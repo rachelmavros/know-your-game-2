@@ -6,6 +6,7 @@
 const LEAGUE_PATH = {
   WNBA: 'basketball/wnba', NBA: 'basketball/nba',
   MLB: 'baseball/mlb', NFL: 'football/nfl', NHL: 'hockey/nhl',
+  EPL: 'soccer/eng.1',
 };
 
 export default async function handler(req, res) {
