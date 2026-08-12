@@ -36,7 +36,17 @@ export default async function handler(req, res) {
           });
         }
       }
-      return res.status(200).json({ team: j.team && j.team.displayName, players });
+      // Head coach (present for most leagues; shape varies).
+      let coach = null;
+      const cSrc = j.coach || (j.team && j.team.coach);
+      const c = Array.isArray(cSrc) ? cSrc[0] : cSrc;
+      if (c && (c.firstName || c.lastName)) {
+        coach = {
+          name: `${c.firstName || ''} ${c.lastName || ''}`.trim(),
+          experience: c.experience != null ? c.experience : null,
+        };
+      }
+      return res.status(200).json({ team: j.team && j.team.displayName, players, coach });
     }
 
     // Team list for the league.

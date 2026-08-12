@@ -3715,11 +3715,11 @@ function PlayersTab({ target }) {
     const t = teams.find(x => x.name === teamFilter);
     if (!t) return; // team list not loaded yet, or no match
     let cancelled = false;
-    setTeamRoster({ league: openLeague, team: teamFilter, loading: true, players: [] });
+    setTeamRoster({ league: openLeague, team: teamFilter, loading: true, players: [], coach: null });
     fetch(`/api/players?league=${encodeURIComponent(openLeague)}&team=${encodeURIComponent(t.id)}`)
       .then(r => r.json())
-      .then(j => { if (!cancelled) setTeamRoster({ league: openLeague, team: teamFilter, loading: false, players: Array.isArray(j.players) ? j.players : [] }); })
-      .catch(() => { if (!cancelled) setTeamRoster({ league: openLeague, team: teamFilter, loading: false, players: [] }); });
+      .then(j => { if (!cancelled) setTeamRoster({ league: openLeague, team: teamFilter, loading: false, players: Array.isArray(j.players) ? j.players : [], coach: j.coach || null }); })
+      .catch(() => { if (!cancelled) setTeamRoster({ league: openLeague, team: teamFilter, loading: false, players: [], coach: null }); });
     return () => { cancelled = true; };
   }, [openLeague, teamFilter, teamsByLeague]);
 
@@ -3851,8 +3851,26 @@ function PlayersTab({ target }) {
                   </>
                 )}
 
-                {/* Coaches */}
-                {coaches.length > 0 && (
+                {/* Live head coach (from the API) when a team is selected */}
+                {teamFilter !== "ALL" && teamRoster.team === teamFilter && teamRoster.coach && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>🎯 HEAD COACH</div>
+                    <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, marginBottom: 20 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "12px 14px" }}>
+                        <Headshot src="" name={teamRoster.coach.name} size={34} lc={lc} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{teamRoster.coach.name}</div>
+                          <div style={{ fontSize: 11, color: C.inkFaint }}>
+                            Head Coach{teamRoster.coach.experience ? ` · ${teamRoster.coach.experience} yrs experience` : ""}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Curated coaches (shown on the All-Teams overview) */}
+                {teamFilter === "ALL" && coaches.length > 0 && (
                   <>
                     <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>🎯 COACHES</div>
                     <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden", marginBottom: 20 }}>
