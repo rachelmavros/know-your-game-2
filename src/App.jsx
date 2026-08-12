@@ -1519,11 +1519,15 @@ function MatchupBreakdown({ game }) {
     } catch { setState("error"); }
   };
 
+  // Compact chip: team logo + name, taps through to the Players tab.
   const teamBtn = (label) => (
     <button key={label} onClick={() => NAV_VIEW_TEAM && NAV_VIEW_TEAM(game.league, label)} style={{
-      background: "transparent", color: lc, border: `1px solid ${lc}`, borderRadius: 6,
-      padding: "6px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-    }}>Learn about {label} →</button>
+      display: "inline-flex", alignItems: "center", gap: 5,
+      background: lc + "12", color: lc, border: "none", borderRadius: 20,
+      padding: "4px 10px 4px 5px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+    }}>
+      <TeamLogo team={label} size={15} />{label} ›
+    </button>
   );
 
   return (
@@ -1549,7 +1553,8 @@ function MatchupBreakdown({ game }) {
           Couldn't load the breakdown. <span onClick={analyze} style={{ color: lc, textDecoration: "underline", cursor: "pointer" }}>Try again</span>.
         </p>
       )}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2, alignItems: "center" }}>
+        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", color: C.inkFaint }}>TEAMS ›</span>
         {teamBtn(game.away)}
         {teamBtn(game.home)}
       </div>
@@ -2843,20 +2848,6 @@ const SPORT_101 = [
       { h: "When it starts", b: "Preseason in August, regular season kicks off September 10. Set an alert for opening weekend." },
     ],
   },
-  {
-    league: "WC",
-    headline: "The World Cup — the biggest event in sports, happening now",
-    season: "June 11 → July 19 · one month, every 4 years",
-    progress: "Group stage wrapping up — knockouts begin early July",
-    sections: [
-      { h: "What it is", b: "The FIFA World Cup is the championship of international soccer, held once every four years. National teams — not clubs — compete, so players represent their home countries. It's the most-watched sporting event on Earth. This year it's hosted across the US, Mexico, and Canada." },
-      { h: "The format — 48 teams, 12 groups", b: "For the first time, 48 teams are split into 12 groups of four. In the group stage, each team plays the other three in its group once. You earn 3 points for a win, 1 for a draw, 0 for a loss." },
-      { h: "How teams advance", b: "The top two teams from each group advance automatically, plus the eight best third-place finishers — 32 teams total move on to the knockout rounds." },
-      { h: "The knockout rounds", b: "From the Round of 32 onward it's single elimination: win or go home. If a knockout game is tied after 90 minutes, it goes to extra time, then a penalty shootout if still level. It builds to the Final on July 19." },
-      { h: "Why it matters", b: "National pride is on the line, the world's best players are all here at once (Messi, Mbappé, Ronaldo), and underdog nations can stun giants. As co-hosts, the USA, Mexico, and Canada are all in — making this a huge moment for North American fans." },
-      { h: "Watching as a casual fan", b: "You don't need to follow a club. Pick a team — your heritage, the host USA, or just a fun underdog like Cape Verde — and follow them through the group stage. Games are on Fox and FS1, streaming on the Fox app." },
-    ],
-  },
 ];
 
 // When the hand-curated tabs (Sports 101, Events) were last reviewed.
@@ -3631,15 +3622,27 @@ async function fetchWiki(name, league) {
     const term = WIKI_TERM[league] || "";
     const s = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(`${name} ${term}`)}&srlimit=1&format=json&origin=*`).then(r => r.json());
     const title = s && s.query && s.query.search && s.query.search[0] && s.query.search[0].title;
-    if (!title) return { extract: "", url: searchUrl };
+    if (!title) return { extract: "", url: searchUrl, thumbnail: "" };
     const sum = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`).then(r => r.json());
     return {
       extract: sum.extract || "",
       url: (sum.content_urls && sum.content_urls.desktop && sum.content_urls.desktop.page) || `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+      thumbnail: (sum.thumbnail && sum.thumbnail.source) || (sum.originalimage && sum.originalimage.source) || "",
     };
   } catch {
-    return { extract: "", url: searchUrl };
+    return { extract: "", url: searchUrl, thumbnail: "" };
   }
+}
+
+// Coach avatar — ESPN has no coach photos, so pull one from Wikipedia.
+function CoachAvatar({ name, team, league, lc }) {
+  const [photo, setPhoto] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    fetchWiki(name, league).then(w => { if (!cancelled && w && w.thumbnail) setPhoto(w.thumbnail); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [name, league]);
+  return <Headshot src={photo} name={name} size={34} lc={lc} />;
 }
 
 // One roster player row: tap "see more" to read a Wikipedia blurb + open the article.
@@ -3758,7 +3761,7 @@ function PlayerDetailModal({ player, onClose }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(20,32,43,0.55)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.surface, borderRadius: "16px 16px 0 0", padding: "24px 22px 36px", width: "100%", maxWidth: 600, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 -8px 32px rgba(20,32,43,0.2)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
-          <PhotoAvatar name={player.name} team={player.team} league={player.league} size={52} seed={player.headshot} />
+          <PhotoAvatar name={player.name} team={player.team} league={player.league} size={52} seed={player.headshot || (player.isCoach && wiki ? (wiki.thumbnail || undefined) : undefined)} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 900, color: C.ink }}>{player.name}</div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 3 }}>
@@ -4002,14 +4005,16 @@ function PlayersTab({ target }) {
                   <>
                     <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>🎯 HEAD COACH</div>
                     <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, marginBottom: 20 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "12px 14px" }}>
-                        <Headshot src="" name={teamRoster.coach.name} size={34} lc={lc} />
+                      <div onClick={() => setSelectedPlayer({ name: teamRoster.coach.name, team: teamFilter, pos: "Head Coach", league: lg, isCoach: true })}
+                        style={{ display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", cursor: "pointer" }}>
+                        <CoachAvatar name={teamRoster.coach.name} team={teamFilter} league={lg} lc={lc} />
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{teamRoster.coach.name}</div>
                           <div style={{ fontSize: 11, color: C.inkFaint }}>
                             Head Coach{teamRoster.coach.experience ? ` · ${teamRoster.coach.experience} yrs experience` : ""}
                           </div>
                         </div>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: lc }}>see more ›</span>
                       </div>
                     </div>
                   </>
