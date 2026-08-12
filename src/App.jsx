@@ -1412,7 +1412,7 @@ function FilterBar({ filters, setFilters }) {
       <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 7 }}>
         {label.toUpperCase()}
       </div>
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", paddingBottom: 2 }}>
         {options.map(o => {
           const active = value === o;
           return (
