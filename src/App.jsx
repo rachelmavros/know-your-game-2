@@ -3140,12 +3140,13 @@ function NewsTab() {
   };
 
   const lc = LEAGUE_COLORS[league];
-  // Featured "Top Story": ESPN orders the feed by editorial prominence (their
-  // own top story first), so we take the first real article — skipping video
-  // highlights/recaps so the banner is an actual story, not a clip.
-  const featured = articles && articles.length
-    ? (articles.find(a => a.type !== "Media" && a.type !== "Media Item" && !/\bhighlights?\b/i.test(a.headline)) || articles[0])
-    : null;
+  // Featured "Top Story": ESPN's feed is ordered by their editorial prominence.
+  // We skip video highlights and low-signal fantasy/betting/rankings content,
+  // then prefer a real news story (HeadlineNews/Story) for the banner.
+  const isJunk = a => /fantasy|betting|\bodds\b|\bpicks?\b|power rankings?|predictions?|mock draft|trade grades?|survivor|parlay|prop bet|waiver/i.test(a.headline || "");
+  const substantive = articles ? articles.filter(a => a.type !== "Media" && !/\bhighlights?\b/i.test(a.headline || "") && !isJunk(a)) : [];
+  const featured = substantive.find(a => a.type === "HeadlineNews" || a.type === "Story")
+    || substantive[0] || (articles && articles[0]) || null;
   const rest = featured ? articles.filter(a => a !== featured) : [];
   return (
     <div>
@@ -3254,6 +3255,10 @@ function EventsTab() {
     if (n < 60) return `In ${Math.round(n / 7)} weeks`;
     return `In ${Math.round(n / 30)} months`;
   };
+  const fmtDate = dk => {
+    try { return new Date(dk + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }); }
+    catch { return ""; }
+  };
 
   return (
     <div>
@@ -3303,7 +3308,7 @@ function EventsTab() {
               <span style={{ fontSize: 15.5, fontWeight: 800 }}>{e.title}</span>
             </div>
             <div style={{ fontSize: 12, fontWeight: 700, color: isNext ? "rgba(255,255,255,0.75)" : lc, marginBottom: 8 }}>
-              🗓 {e.span}{e.where ? ` · ${e.where}` : ""}
+              🗓 {fmtDate(e.dateKey)}{e.span ? ` · ${e.span}` : ""}{e.where ? ` · ${e.where}` : ""}
             </div>
             {e.note && (
               <p style={{ fontSize: 13, lineHeight: 1.6, margin: "0 0 12px", color: isNext ? "rgba(255,255,255,0.85)" : C.inkDim }}>
@@ -3649,7 +3654,12 @@ function PhotoAvatar({ name, team, league, size, seed }) {
     let cancelled = false;
     fetch(`/api/headshot?league=${encodeURIComponent(league)}&team=${encodeURIComponent(team)}&name=${encodeURIComponent(name)}`)
       .then(r => r.json())
-      .then(j => { if (j && j.headshot) { HEADSHOT_CACHE[cacheKey] = j.headshot; if (!cancelled) setPhoto(j.headshot); } })
+      .then(async j => {
+        if (j && j.headshot) { HEADSHOT_CACHE[cacheKey] = j.headshot; if (!cancelled) setPhoto(j.headshot); return; }
+        // ESPN has no headshot (common for EPL) → fall back to a Wikipedia photo.
+        const w = await fetchWiki(name, league);
+        if (w && w.thumbnail) { HEADSHOT_CACHE[cacheKey] = w.thumbnail; if (!cancelled) setPhoto(w.thumbnail); }
+      })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [name, team, league, seed, cacheKey]);
@@ -3974,21 +3984,24 @@ function PlayersTab({ target }) {
     setTeamFilter(target.team || "ALL");
   }, [target]);
 
-  // Fetch the full team list for the open league (once per league).
+  // Prefetch every league's team list on mount so the collapsed headers show
+  // real team counts (and logos register) before you open a league.
   useEffect(() => {
-    if (!openLeague || teamsByLeague[openLeague]) return;
     let cancelled = false;
-    fetch(`/api/players?league=${encodeURIComponent(openLeague)}`)
-      .then(r => r.json())
-      .then(j => {
-        if (cancelled) return;
-        const teams = Array.isArray(j.teams) ? j.teams : [];
-        registerLogos(teams.map(t => [t.name, t.logo]));
-        setTeamsByLeague(m => ({ ...m, [openLeague]: teams }));
-      })
-      .catch(() => {});
+    leagues.forEach(lg => {
+      if (teamsByLeague[lg]) return;
+      fetch(`/api/players?league=${encodeURIComponent(lg)}`)
+        .then(r => r.json())
+        .then(j => {
+          if (cancelled) return;
+          const teams = Array.isArray(j.teams) ? j.teams : [];
+          registerLogos(teams.map(t => [t.name, t.logo]));
+          setTeamsByLeague(m => ({ ...m, [lg]: teams }));
+        })
+        .catch(() => {});
+    });
     return () => { cancelled = true; };
-  }, [openLeague, teamsByLeague]);
+  }, []); // once on mount
 
   // A notable "player to watch" for the selected team when we have no curated
   // star for it (AI-picked, cached server-side).
@@ -4085,7 +4098,9 @@ function PlayersTab({ target }) {
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 900, color: isOpen ? "#fff" : C.ink, letterSpacing: "0.02em" }}>{lg}</div>
                 <div style={{ fontSize: 11, color: isOpen ? "rgba(255,255,255,0.75)" : C.inkFaint, fontWeight: 600 }}>
-                  {LEAGUE_SPORT[lg]} · {data.stars.length} featured players · {allTeams.length} teams
+                  {LEAGUE_SPORT[lg]}
+                  {(() => { const fp = data.stars.length || (leagueStars[lg] ? leagueStars[lg].length : 0); return fp ? ` · ${fp} featured players` : ""; })()}
+                  {allTeams.length ? ` · ${allTeams.length} teams` : ""}
                 </div>
               </div>
               {/* Star previews — show 3 avatar monograms on the collapsed row */}
