@@ -3039,6 +3039,76 @@ const BIG_EVENTS = [
     note: "The Knicks begin their title defense. Opening night is a double-header showcase of the league's biggest stars." },
 ];
 
+function NewsTab() {
+  const leagues = ["WNBA", "NBA", "MLB", "NFL", "NHL"];
+  const [league, setLeague] = useState("WNBA");
+  const [articles, setArticles] = useState(null); // null = loading
+  useEffect(() => {
+    let cancelled = false;
+    setArticles(null);
+    fetch(`/api/news?league=${league}`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled) setArticles(Array.isArray(j.articles) ? j.articles : []); })
+      .catch(() => { if (!cancelled) setArticles([]); });
+    return () => { cancelled = true; };
+  }, [league]);
+
+  const timeAgo = iso => {
+    if (!iso) return "";
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 3600) return `${Math.max(1, Math.round(diff / 60))}m ago`;
+    if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
+    return `${Math.round(diff / 86400)}d ago`;
+  };
+
+  const lc = LEAGUE_COLORS[league];
+  return (
+    <div>
+      <div style={{ fontSize: 20, fontWeight: 900, color: C.ink, marginBottom: 6 }}>📰 Latest News</div>
+      <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 14 }}>
+        Headlines, injuries, and storylines — pulled live from ESPN. Tap any story to read the full article.
+      </p>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 18, paddingBottom: 4 }}>
+        {leagues.map(lg => (
+          <button key={lg} onClick={() => setLeague(lg)} style={{
+            flexShrink: 0, padding: "8px 16px", borderRadius: 20, cursor: "pointer",
+            background: league === lg ? LEAGUE_COLORS[lg] : C.surface,
+            color: league === lg ? "#fff" : C.inkDim, fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+            border: `1px solid ${league === lg ? LEAGUE_COLORS[lg] : C.line}`,
+          }}>{SPORT_EMOJI[lg]} {lg}</button>
+        ))}
+      </div>
+
+      {articles === null ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.inkDim, padding: "10px 2px" }}>
+          <span style={{ width: 14, height: 14, border: `2px solid ${C.line}`, borderTopColor: lc, borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
+          Loading the latest…
+        </div>
+      ) : articles.length === 0 ? (
+        <div style={{ fontSize: 13, color: C.inkFaint, padding: "10px 2px" }}>No news available right now — check back soon.</div>
+      ) : (
+        articles.map((a, i) => (
+          <a key={i} href={a.link} target="_blank" rel="noopener noreferrer" style={{
+            display: "flex", gap: 0, textDecoration: "none", background: C.surface,
+            border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden", marginBottom: 10,
+          }}>
+            {a.image
+              ? <img src={a.image} alt="" style={{ width: 104, height: 104, objectFit: "cover", flexShrink: 0 }} loading="lazy" />
+              : <div style={{ width: 6, background: lc, flexShrink: 0 }} />}
+            <div style={{ flex: 1, minWidth: 0, padding: "12px 14px" }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: C.ink, lineHeight: 1.35, marginBottom: 5 }}>{a.headline}</div>
+              {a.description && <div style={{ fontSize: 12.5, color: C.inkDim, lineHeight: 1.5, marginBottom: 6, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{a.description}</div>}
+              <div style={{ fontSize: 11, color: lc, fontWeight: 700 }}>
+                {a.type ? `${a.type} · ` : ""}{timeAgo(a.published)} · Read on ESPN ↗
+              </div>
+            </div>
+          </a>
+        ))
+      )}
+    </div>
+  );
+}
+
 function EventsTab() {
   const today = todayKey();
   const upcoming = BIG_EVENTS.filter(e => e.dateKey >= today);
@@ -4380,6 +4450,7 @@ export default function App() {
   const TABS = [
     { id: "today", label: "Today" },
     { id: "calendar", label: "Calendar" },
+    { id: "news", label: "News" },
     { id: "events", label: "Events" },
     { id: "standings", label: "Standings" },
     { id: "players", label: "Players" },
@@ -4501,6 +4572,7 @@ export default function App() {
           </>
         )}
         {tab === "calendar" && <CalendarTab alerts={calAlerts} onAlert={toggleCalAlert} />}
+        {tab === "news" && <NewsTab />}
         {tab === "events" && <EventsTab />}
         {tab === "standings" && <StandingsTab />}
         {tab === "players" && <PlayersTab target={playerTarget} />}
