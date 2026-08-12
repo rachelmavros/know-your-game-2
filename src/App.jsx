@@ -322,7 +322,51 @@ function useLiveSchedule() {
         });
       }
 
-      const total = wnba.length + mlb.length + wc.length + wcCache.length;
+      // Premier League fixtures + live scores/status for all leagues (ESPN, free).
+      const normT = s => (s || "").toLowerCase().split(/\s+/).pop();
+      const mapState = st => st === "in" ? "live" : st === "post" ? "post" : "upcoming";
+      const scoresFor = async (lg, s, e) => {
+        try {
+          const r = await fetch(`/api/scores?league=${lg}&start=${s}&end=${e}`);
+          const j = await r.json();
+          return Array.isArray(j.games) ? j.games : [];
+        } catch { return []; }
+      };
+      const [eplGames, wnbaScores, mlbScores] = await Promise.all([
+        scoresFor("EPL", addDays(today, -3), addDays(today, 21)),
+        scoresFor("WNBA", addDays(today, -2), addDays(today, 2)),
+        scoresFor("MLB", addDays(today, -2), addDays(today, 2)),
+      ]);
+      if (!cancelled) {
+        eplGames.forEach(g => {
+          if (!g.dateKey || !g.home || !g.away) return;
+          (grouped[g.dateKey] = grouped[g.dateKey] || []).push({
+            league: "EPL", dateKey: g.dateKey, home: g.home, away: g.away,
+            homeAbbr: g.homeAbbr, awayAbbr: g.awayAbbr, time: g.time, verdict: 3,
+            status: mapState(g.state), clock: g.detail,
+            score: g.homeScore != null ? { [g.homeAbbr]: g.homeScore, [g.awayAbbr]: g.awayScore } : null,
+            channel: g.network || "", tagline: `${g.away} vs ${g.home} · Premier League`,
+            note: `${g.away} vs ${g.home} · Premier League`, fromApi: true,
+          });
+        });
+        // Overlay live scores + status onto WNBA/MLB games from BallDontLie.
+        const overlay = (lg, list) => {
+          const lookup = {};
+          list.forEach(g => { lookup[`${g.dateKey}|${normT(g.home)}|${normT(g.away)}`] = g; });
+          Object.values(grouped).forEach(arr => arr.forEach(ev => {
+            if (ev.league !== lg) return;
+            const g = lookup[`${ev.dateKey}|${normT(ev.home)}|${normT(ev.away)}`];
+            if (!g) return;
+            ev.status = mapState(g.state);
+            ev.clock = g.detail;
+            if (g.homeScore != null) ev.score = { [ev.homeAbbr]: g.homeScore, [ev.awayAbbr]: g.awayScore };
+          }));
+        };
+        overlay("WNBA", wnbaScores);
+        overlay("MLB", mlbScores);
+      }
+
+      const total = wnba.length + mlb.length + wc.length + wcCache.length + eplGames.length;
       setCounts({ wnba: wnba.length, mlb: mlb.length, worldcup: wc.length + wcCache.length });
       setLiveEvents(grouped);
       setStatus(total > 0 ? "done" : "empty");
@@ -1562,6 +1606,8 @@ function MatchupBreakdown({ game }) {
 function GameCard({ game, alertOn, onAlert }) {
   const lc = LEAGUE_COLORS[game.league];
   const isLive = game.status === "live";
+  const isFinal = game.status === "post";
+  const hasScore = (isLive || isFinal) && game.score;
   return (
     <div style={{
       display: "flex", background: C.surface, borderRadius: 11, overflow: "hidden", marginBottom: 11,
@@ -1577,6 +1623,8 @@ function GameCard({ game, alertOn, onAlert }) {
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.red, animation: "pulse 1.4s infinite" }} />
               <span style={{ fontSize: 11, fontWeight: 800, color: C.red, letterSpacing: "0.06em" }}>LIVE · {game.clock}</span>
             </span>
+          ) : isFinal ? (
+            <span style={{ fontSize: 11, fontWeight: 800, color: C.inkMid, letterSpacing: "0.06em" }}>{game.clock || "FINAL"}</span>
           ) : (
             <span style={{ fontSize: 11, color: C.inkDim, fontWeight: 600 }}>{game.day} · {game.time}</span>
           )}
@@ -1584,11 +1632,15 @@ function GameCard({ game, alertOn, onAlert }) {
           <span style={{ marginLeft: "auto" }}><VerdictChip level={game.verdict} /></span>
         </div>
 
-        {isLive && game.score ? (
-          <div style={{ fontSize: 20, fontWeight: 900, color: C.ink, marginBottom: 4 }}>
-            {game.homeAbbr} <span style={{ color: C.red }}>{game.score[game.homeAbbr]}</span>
-            <span style={{ color: C.inkFaint, margin: "0 8px" }}>—</span>
-            <span style={{ color: C.red }}>{game.score[game.awayAbbr]}</span> {game.awayAbbr}
+        {hasScore ? (
+          <div style={{ fontSize: 20, fontWeight: 900, color: C.ink, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <TeamLogo team={game.away} size={22} />{game.awayAbbr || game.away} <span style={{ color: isLive ? C.red : C.ink }}>{game.score[game.awayAbbr]}</span>
+            </span>
+            <span style={{ color: C.inkFaint, fontSize: 14 }}>–</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <span style={{ color: isLive ? C.red : C.ink }}>{game.score[game.homeAbbr]}</span> {game.homeAbbr || game.home}<TeamLogo team={game.home} size={22} />
+            </span>
           </div>
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
@@ -4476,9 +4528,10 @@ export default function App() {
       league: e.league, city: e.home, // city best-effort
       home: e.home, homeAbbr: e.homeAbbr, away: e.away, awayAbbr: e.awayAbbr,
       time: e.time, day: "Today", dateKey: e.dateKey,
-      status: "upcoming", verdict: e.verdict || 3,
+      status: e.status || "upcoming", score: e.score || null, clock: e.clock || "",
+      verdict: e.verdict || 3,
       tagline: e.tagline || "", summary: e.summary || e.note || "",
-      channel: "", channelUrl: "",
+      channel: e.channel || "", channelUrl: "",
       fromApi: true,
     }));
 
