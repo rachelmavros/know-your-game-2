@@ -3,7 +3,7 @@
 
 export const config = { maxDuration: 15 };
 
-const LEAGUE_PATH = { WNBA: 'basketball/wnba', NBA: 'basketball/nba', MLB: 'baseball/mlb', NFL: 'football/nfl', NHL: 'hockey/nhl', EPL: 'soccer/eng.1' };
+const LEAGUE_PATH = { WNBA: 'basketball/wnba', NBA: 'basketball/nba', MLB: 'baseball/mlb', NFL: 'football/nfl', NHL: 'hockey/nhl', EPL: 'soccer/eng.1', CFB: 'football/college-football', WVB: 'volleyball/womens-college-volleyball' };
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate=172800');

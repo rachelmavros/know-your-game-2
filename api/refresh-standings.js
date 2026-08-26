@@ -132,6 +132,35 @@ async function buildEpl() {
   return out.map((t, i) => ({ rank: i + 1, team: t.team, logo: t.logo || '', conf: '', w: t.w, d: t.d, l: t.l, pts: t.pts, played: t.played }));
 }
 
+// College sports have ~400 teams across divisions, so a W-L table is useless to
+// a casual fan. The AP Top 25 poll IS the standings people actually follow, so
+// that's what we cache for college football and women's volleyball.
+async function buildRankings(path) {
+  const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${path}/rankings`);
+  if (!r.ok) return [];
+  const j = await r.json();
+  const polls = j.rankings || [];
+  // Prefer the AP poll; fall back to whatever poll ESPN lists first.
+  const poll = polls.find(p => /AP/i.test(p.shortName || p.name || '')) || polls[0];
+  if (!poll) return [];
+  return (poll.ranks || []).map(e => {
+    const t = e.team || {};
+    const logos = t.logos || [];
+    const logo = (logos.find(l => (l.rel || []).includes('default')) || logos[0] || {}).href || '';
+    return {
+      rank: e.current,
+      team: [t.location, t.name].filter(Boolean).join(' ') || t.nickname || '',
+      abbr: t.abbreviation || '',
+      logo,
+      record: e.recordSummary || '',
+      points: e.points || null,
+      trend: e.trend && e.trend !== '-' ? e.trend : '',
+      firstPlaceVotes: e.firstPlaceVotes || 0,
+      poll: poll.shortName || poll.name || 'Poll',
+    };
+  }).filter(x => x.rank && x.team);
+}
+
 export default async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) {
@@ -152,14 +181,19 @@ export default async function handler(req, res) {
   await tryBuild('nba', () => buildGrouped('NBA'));
   await tryBuild('nfl', () => buildGrouped('NFL'));
   await tryBuild('epl', buildEpl);
+  await tryBuild('cfb', () => buildRankings('football/college-football'));
+  await tryBuild('wvb', () => buildRankings('volleyball/womens-college-volleyball'));
 
   counts.wnba = (value.wnba || []).length;
   counts.epl = (value.epl || []).length;
+  counts.cfb = (value.cfb || []).length;
+  counts.wvb = (value.wvb || []).length;
   for (const k of ['mlb', 'nba', 'nfl']) counts[k] = value[k] ? Object.fromEntries(Object.entries(value[k]).map(([c, r]) => [c, r.length])) : null;
 
   if (debug) return res.status(200).json({ ok: true, debug: true, counts, value });
 
-  const anything = (value.wnba || []).length || value.mlb || value.nba || value.nfl || (value.epl || []).length;
+  const anything = (value.wnba || []).length || value.mlb || value.nba || value.nfl
+    || (value.epl || []).length || (value.cfb || []).length || (value.wvb || []).length;
   if (!anything) return res.status(200).json({ ok: false, error: 'No standings parsed', counts });
 
   const up = await fetch(`${supabaseUrl}/rest/v1/app_cache?on_conflict=key`, {
