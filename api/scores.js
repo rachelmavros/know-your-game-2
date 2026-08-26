@@ -1,9 +1,16 @@
 // api/scores.js — games + live scores + status from ESPN's free scoreboard, for
 // any league over a date range. Node function (ESPN blocks Vercel's edge egress).
-// Powers Premier League fixtures on Today/Calendar and live scores everywhere.
+// Powers Premier League + college fixtures on Today/Calendar and live scores everywhere.
 //   /api/scores?league=EPL&start=2026-08-22&end=2026-09-15
 
-const LEAGUE_PATH = { WNBA: 'basketball/wnba', MLB: 'baseball/mlb', NBA: 'basketball/nba', NFL: 'football/nfl', NHL: 'hockey/nhl', EPL: 'soccer/eng.1' };
+import { scoreCompetition } from './_verdict.js';
+
+const LEAGUE_PATH = {
+  WNBA: 'basketball/wnba', MLB: 'baseball/mlb', NBA: 'basketball/nba',
+  NFL: 'football/nfl', NHL: 'hockey/nhl', EPL: 'soccer/eng.1',
+  CFB: 'football/college-football',
+  WVB: 'volleyball/womens-college-volleyball',
+};
 
 function ctParts(iso) {
   try {
@@ -45,6 +52,18 @@ export default async function handler(req, res) {
       if (!dateKey) continue;
       let network = '';
       for (const b of (comp.broadcasts || [])) { if (Array.isArray(b.names) && b.names[0]) { network = b.names[0]; break; } }
+      // Rate the game from records / AP rank / spread / TV / stakes so the whole
+      // slate gets a real verdict instead of a flat "good game" default.
+      const { verdict, reasons } = scoreCompetition(comp, ev, network);
+      const rankOf = c => {
+        const r = c.curatedRank && c.curatedRank.current;
+        return (typeof r === 'number' && r > 0 && r < 99) ? r : null;
+      };
+      const recOf = c => {
+        const rs = c.records || [];
+        const t = rs.find(x => x.type === 'total') || rs[0];
+        return (t && t.summary) || '';
+      };
       games.push({
         league, home: nm(H), away: nm(A), homeAbbr: ab(H), awayAbbr: ab(A),
         dateKey, time,
@@ -53,6 +72,9 @@ export default async function handler(req, res) {
         homeScore: H.score != null && H.score !== '' ? Number(H.score) : null,
         awayScore: A.score != null && A.score !== '' ? Number(A.score) : null,
         network,
+        verdict, verdictWhy: reasons,
+        homeRank: rankOf(H), awayRank: rankOf(A),
+        homeRecord: recOf(H), awayRecord: recOf(A),
       });
     }
     return res.status(200).json({ games });

@@ -2,7 +2,7 @@
 // no AI — straight aggregation). Node function (ESPN blocks Vercel's edge
 // egress). Cached at the CDN. Returns recent articles per league.
 
-const LEAGUE_PATH = { WNBA: 'basketball/wnba', MLB: 'baseball/mlb', NBA: 'basketball/nba', NFL: 'football/nfl', NHL: 'hockey/nhl', EPL: 'soccer/eng.1' };
+const LEAGUE_PATH = { WNBA: 'basketball/wnba', MLB: 'baseball/mlb', NBA: 'basketball/nba', NFL: 'football/nfl', NHL: 'hockey/nhl', EPL: 'soccer/eng.1', CFB: 'football/college-football', WVB: 'volleyball/womens-college-volleyball' };
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');

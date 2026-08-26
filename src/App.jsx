@@ -332,23 +332,43 @@ function useLiveSchedule() {
           return Array.isArray(j.games) ? j.games : [];
         } catch { return []; }
       };
-      const [eplGames, wnbaScores, mlbScores] = await Promise.all([
-        scoresFor("EPL", addDays(today, -3), addDays(today, 21)),
+      // Leagues we source entirely from ESPN (fixtures AND scores), vs. the
+      // BallDontLie leagues below where ESPN only supplies the live overlay.
+      const ESPN_LEAGUES = [
+        { lg: "EPL",  back: 3, fwd: 21, blurb: "Premier League",         atWord: "vs" },
+        { lg: "CFB",  back: 2, fwd: 14, blurb: "College Football",       atWord: "at" },
+        { lg: "WVB",  back: 2, fwd: 14, blurb: "College Volleyball",     atWord: "vs" },
+      ];
+      const [espnSets, wnbaScores, mlbScores] = await Promise.all([
+        Promise.all(ESPN_LEAGUES.map(c => scoresFor(c.lg, addDays(today, -c.back), addDays(today, c.fwd)))),
         scoresFor("WNBA", addDays(today, -2), addDays(today, 2)),
         scoresFor("MLB", addDays(today, -2), addDays(today, 2)),
       ]);
+      const espnGames = espnSets.flat();
       if (!cancelled) {
-        eplGames.forEach(g => {
+        ESPN_LEAGUES.forEach((cfg, i) => (espnSets[i] || []).forEach(g => {
           if (!g.dateKey || !g.home || !g.away) return;
+          // College volleyball runs ~200 games a day across every division —
+          // dumping them all on Today buries everything else. Keep the ones a
+          // casual fan would plausibly watch: a ranked team, a nationally
+          // televised game, or anything the rating flagged as better than filler.
+          if (cfg.lg === "WVB" && !g.homeRank && !g.awayRank && (g.verdict || 2) < 3) return;
+          // Rank prefix reads the way TV does: "#3 Ohio State".
+          const withRank = (name, rank) => (rank ? `#${rank} ${name}` : name);
+          const label = `${withRank(g.away, g.awayRank)} ${cfg.atWord} ${withRank(g.home, g.homeRank)} · ${cfg.blurb}`;
           (grouped[g.dateKey] = grouped[g.dateKey] || []).push({
-            league: "EPL", dateKey: g.dateKey, home: g.home, away: g.away,
-            homeAbbr: g.homeAbbr, awayAbbr: g.awayAbbr, time: g.time, verdict: 3,
+            league: cfg.lg, dateKey: g.dateKey, home: g.home, away: g.away,
+            homeAbbr: g.homeAbbr, awayAbbr: g.awayAbbr, time: g.time,
+            verdict: g.verdict || 3, verdictWhy: g.verdictWhy || [],
+            homeRank: g.homeRank, awayRank: g.awayRank,
+            homeRecord: g.homeRecord, awayRecord: g.awayRecord,
+            atWord: cfg.atWord,
             status: mapState(g.state), clock: g.detail,
             score: g.homeScore != null ? { [g.homeAbbr]: g.homeScore, [g.awayAbbr]: g.awayScore } : null,
-            channel: g.network || "", tagline: `${g.away} vs ${g.home} · Premier League`,
-            note: `${g.away} vs ${g.home} · Premier League`, fromApi: true,
+            channel: g.network || "", tagline: label,
+            note: label, fromApi: true,
           });
-        });
+        }));
         // Overlay live scores + status onto WNBA/MLB games from BallDontLie.
         const overlay = (lg, list) => {
           const lookup = {};
@@ -360,13 +380,17 @@ function useLiveSchedule() {
             ev.status = mapState(g.state);
             ev.clock = g.detail;
             if (g.homeScore != null) ev.score = { [ev.homeAbbr]: g.homeScore, [ev.awayAbbr]: g.awayScore };
+            // Curated games keep their hand-written verdict; API-filled ones
+            // (which all defaulted to a flat 3) take the computed rating.
+            if (g.verdict && ev.fromApi) { ev.verdict = g.verdict; ev.verdictWhy = g.verdictWhy || []; }
+            if (g.homeRecord) { ev.homeRecord = g.homeRecord; ev.awayRecord = g.awayRecord; }
           }));
         };
         overlay("WNBA", wnbaScores);
         overlay("MLB", mlbScores);
       }
 
-      const total = wnba.length + mlb.length + wc.length + wcCache.length + eplGames.length;
+      const total = wnba.length + mlb.length + wc.length + wcCache.length + espnGames.length;
       setCounts({ wnba: wnba.length, mlb: mlb.length, worldcup: wc.length + wcCache.length });
       setLiveEvents(grouped);
       setStatus(total > 0 ? "done" : "empty");
@@ -420,15 +444,23 @@ const LEAGUE_COLORS = {
   MLS:  "#6B4FBB",   // purple
   WC:   "#0E8C5A",   // World Cup green
   EPL:  "#3D195B",   // Premier League purple
+  CFB:  "#8C1D40",   // college football maroon
+  WVB:  "#0F766E",   // women's college volleyball teal-green
 };
-const LEAGUE_SPORT = { WNBA:"Basketball", NBA:"Basketball", MLB:"Baseball", NFL:"Football", NHL:"Hockey", MLS:"Soccer", WC:"Soccer · World Cup", EPL:"Soccer · Premier League" };
+const LEAGUE_SPORT = { WNBA:"Basketball", NBA:"Basketball", MLB:"Baseball", NFL:"Football", NHL:"Hockey", MLS:"Soccer", WC:"Soccer · World Cup", EPL:"Soccer · Premier League", CFB:"Football · College", WVB:"Volleyball · College" };
+// Full names for headers/menus where the abbreviation alone isn't obvious.
+const LEAGUE_LABEL = { CFB: "College Football", WVB: "Women's College Volleyball" };
+const leagueLabel = lg => LEAGUE_LABEL[lg] || lg;
 
+// The verdict scale. `bg`/`text` style the badge; `dot` is the swatch used in
+// the legend — they MUST stay in sync so the key actually explains the badges.
 const VERDICT = {
-  5: { label: "MUST WATCH",      bg: "#C8102E", text: "#fff" },
-  4: { label: "WORTH YOUR TIME", bg: "#E8590C", text: "#fff" },
-  3: { label: "GOOD GAME",       bg: "#E7EBEF", text: "#46535F" },
-  2: { label: "CASUAL VIEWING",  bg: "#F0F3F6", text: "#9AA5B1" },
+  5: { label: "MUST WATCH",      bg: "#C8102E", text: "#fff",    dot: "#C8102E", short: "Must watch" },
+  4: { label: "WORTH YOUR TIME", bg: "#E8590C", text: "#fff",    dot: "#E8590C", short: "Worth your time" },
+  3: { label: "GOOD GAME",       bg: "#1D5BBF", text: "#fff",    dot: "#1D5BBF", short: "Good game" },
+  2: { label: "CASUAL VIEWING",  bg: "#EDF0F3", text: "#7A8592", dot: "#C2CAD2", short: "Casual" },
 };
+const VERDICT_TIERS = [5, 4, 3, 2];
 
 /* ─── DATA ────────────────────────────────────────────────── */
 
@@ -658,7 +690,7 @@ const SEASON_CONTEXT = {
 };
 
 // Sport emoji per league — used on headlines everywhere
-const SPORT_EMOJI = { WNBA: "🏀", NBA: "🏀", MLB: "⚾", NFL: "🏈", NHL: "🏒", MLS: "⚽", WC: "⚽", EPL: "⚽" };
+const SPORT_EMOJI = { WNBA: "🏀", NBA: "🏀", MLB: "⚾", NFL: "🏈", NHL: "🏒", MLS: "⚽", WC: "⚽", EPL: "⚽", CFB: "🏈", WVB: "🏐" };
 
 // Team color accents for logo badges (monogram discs). Keyed by full team name.
 const TEAM_COLORS = {
@@ -786,6 +818,19 @@ const NBA_BRACKET = {
 // Standings for every league. `playoffCut` = how many teams make the playoffs (for the cut line).
 // `status` set when a league isn't in active play, which renders a status card instead of a table.
 const STANDINGS = {
+  // College sports have 350-400 teams across divisions, so a win-loss table
+  // means nothing to a casual fan. The AP Top 25 poll is what people actually
+  // follow and talk about, so that's the "standings" we show.
+  CFB: {
+    emoji: "🏈", label: "College Football AP Top 25",
+    blurb: "Sportswriters vote every week on the 25 best teams in the country. Moving up the poll matters — the top teams play for the national championship in January.",
+    cols: [], playoffCut: 12, isPoll: true,
+  },
+  WVB: {
+    emoji: "🏐", label: "Women's College Volleyball Top 25",
+    blurb: "The weekly national poll of the 25 best college volleyball programs. The season builds to the NCAA Tournament and the Final Four in December.",
+    cols: [], playoffCut: 0, isPoll: true,
+  },
   EPL: {
     emoji: "⚽", label: "Premier League Table",
     blurb: "England's top soccer division — 20 clubs ranked by points (3 for a win, 1 for a draw). The top few qualify for Europe's Champions League.",
@@ -1228,6 +1273,34 @@ function VerdictChip({ level }) {
   );
 }
 
+// Badge + the plain-English reasons behind it ("#3 vs #12 · National TV").
+// Showing the "why" is what turns a rating into something a casual fan trusts.
+function VerdictLine({ level, why }) {
+  const reasons = (why || []).filter(Boolean);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+      <VerdictChip level={level} />
+      {reasons.length > 0 && (
+        <span style={{ fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>
+          {reasons.slice(0, 3).join(" · ")}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Small colored dot standing in for the verdict on condensed one-line rows,
+// using the same scale as the badge and the legend.
+function VerdictDot({ level }) {
+  const v = VERDICT[level] || VERDICT[2];
+  return (
+    <span title={v.short} style={{
+      width: 8, height: 8, borderRadius: "50%", background: v.dot,
+      flexShrink: 0, display: "inline-block",
+    }} />
+  );
+}
+
 function Toggle({ on, onChange }) {
   return (
     <div onClick={() => onChange(!on)} style={{
@@ -1503,10 +1576,11 @@ function ExpandableOtherGame({ game, alertOn, onAlert, first }) {
       display: "flex", alignItems: "center", gap: 10, padding: "11px 14px",
       borderTop: topBorder, cursor: "pointer",
     }}>
+      <VerdictDot level={game.verdict} />
       <span style={{ fontSize: 8, fontWeight: 800, color: "#fff", background: LEAGUE_COLORS[game.league], borderRadius: 3, padding: "2px 5px", flexShrink: 0 }}>{game.league}</span>
       <TeamLogo team={game.away} size={18} />
       <span style={{ fontSize: 13, color: C.inkMid, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {game.away} at {game.home}
+        {game.away} {game.atWord || "at"} {game.home}
       </span>
       <TeamLogo team={game.home} size={18} />
       <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{game.time}</span>
@@ -1533,9 +1607,10 @@ function HeroCard({ game, alertOn, onAlert }) {
           {game.away}<span style={{ fontSize: 17, color: C.inkFaint, fontWeight: 400, margin: "0 10px" }}>at</span>{game.home}
         </div>
         <div style={{ fontSize: 14, color: lc, fontWeight: 800, marginBottom: 14 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>
-        <div style={{ marginBottom: 14 }}><VerdictChip level={game.verdict} /></div>
+        <div style={{ marginBottom: 14 }}><VerdictLine level={game.verdict} why={game.verdictWhy} /></div>
         <p style={{ fontSize: 14, color: C.inkMid, lineHeight: 1.6, margin: "0 0 14px", maxWidth: 500 }}>{game.summary}</p>
         <MatchupBreakdown game={game} />
+        <TeamLinks game={game} />
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <WatchOptions game={game} color={lc} big />
           <button onClick={() => onAlert(game.id)} style={{
@@ -1557,7 +1632,26 @@ function HeroCard({ game, alertOn, onAlert }) {
 // for one of its teams. App wires this up on mount.
 let NAV_VIEW_TEAM = null;
 
-// On-demand AI matchup breakdown + "learn about this team" deep-links.
+// "Learn about this team" deep-links for BOTH teams in a game. Kept separate
+// from MatchupBreakdown so they render on every game card — including live
+// ones, where the AI breakdown is hidden but you still want the team info.
+function TeamLinks({ game }) {
+  const lc = LEAGUE_COLORS[game.league];
+  const btn = (label) => (
+    <button key={label} onClick={() => NAV_VIEW_TEAM && NAV_VIEW_TEAM(game.league, label)} style={{
+      background: "transparent", color: lc, border: `1px solid ${lc}`, borderRadius: 6,
+      padding: "6px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+    }}>Learn about {label} →</button>
+  );
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "2px 0 12px" }}>
+      {btn(game.away)}
+      {btn(game.home)}
+    </div>
+  );
+}
+
+// On-demand AI matchup breakdown.
 function MatchupBreakdown({ game }) {
   const [state, setState] = useState("idle"); // idle | loading | done | error
   const [text, setText] = useState("");
@@ -1576,15 +1670,8 @@ function MatchupBreakdown({ game }) {
     } catch { setState("error"); }
   };
 
-  const teamBtn = (label) => (
-    <button key={label} onClick={() => NAV_VIEW_TEAM && NAV_VIEW_TEAM(game.league, label)} style={{
-      background: "transparent", color: lc, border: `1px solid ${lc}`, borderRadius: 6,
-      padding: "6px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-    }}>Learn about {label} →</button>
-  );
-
   return (
-    <div style={{ margin: "6px 0 14px" }}>
+    <div style={{ margin: "6px 0 8px" }}>
       {state === "idle" && (
         <button onClick={analyze} style={{
           display: "block", marginBottom: 12,
@@ -1606,10 +1693,6 @@ function MatchupBreakdown({ game }) {
           Couldn't load the breakdown. <span onClick={analyze} style={{ color: lc, textDecoration: "underline", cursor: "pointer" }}>Try again</span>.
         </p>
       )}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
-        {teamBtn(game.away)}
-        {teamBtn(game.home)}
-      </div>
     </div>
   );
 }
@@ -1661,7 +1744,7 @@ function GameCard({ game, alertOn, onAlert }) {
               <TeamLogo team={game.away} size={24} />
               <span style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>{game.away}</span>
             </span>
-            <span style={{ color: C.inkFaint, fontSize: 13, fontWeight: 400 }}>at</span>
+            <span style={{ color: C.inkFaint, fontSize: 13, fontWeight: 400 }}>{game.atWord || "at"}</span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <TeamLogo team={game.home} size={24} />
               <span style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>{game.home}</span>
@@ -1670,9 +1753,20 @@ function GameCard({ game, alertOn, onAlert }) {
         )}
 
         <div style={{ fontSize: 13, color: lc, fontWeight: 700, marginBottom: 6 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>
+
+        {/* How good is this game, and why — shown on every card, not just the hero. */}
+        <VerdictLine level={game.verdict} why={game.verdictWhy} />
+
+        {(game.awayRecord || game.homeRecord) && (
+          <div style={{ fontSize: 11.5, color: C.inkFaint, fontWeight: 600, marginBottom: 8 }}>
+            {game.away} {game.awayRecord} · {game.home} {game.homeRecord}
+          </div>
+        )}
+
         <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, margin: "0 0 12px" }}>{game.summary}</p>
 
         {!isLive && <MatchupBreakdown game={game} />}
+        <TeamLinks game={game} />
 
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <WatchOptions game={game} color={lc} />
@@ -1833,7 +1927,7 @@ function CalendarTab({ alerts, onAlert }) {
       )}
       {/* Sport filter pills */}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, paddingBottom: 2 }}>
-        {["ALL", "WNBA", "NBA", "MLB", "WC", "NFL", "NHL", "MLS"].map(lg => (
+        {["ALL", "WNBA", "NBA", "MLB", "CFB", "WVB", "NFL", "NHL", "MLS"].map(lg => (
           <button key={lg} onClick={() => setCalFilters({ sport: lg, team: "ALL" })} style={{
             flexShrink: 0, padding: "6px 13px", borderRadius: 16, cursor: "pointer",
             background: calFilters.sport === lg ? (LEAGUE_COLORS[lg] || C.red) : C.surface,
@@ -2060,10 +2154,10 @@ function CalendarTab({ alerts, onAlert }) {
 
       {/* legend */}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 20, padding: "14px 16px", background: C.surface, borderRadius: 10, border: `1px solid ${C.line}` }}>
-        {[["Must watch", C.red],["Worth your time","#E8590C"],["Good game","#1D5BBF"],["Casual","#C2CAD2"]].map(([l,c]) => (
-          <div key={l} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: c }} />
-            <span style={{ fontSize: 11, color: C.inkDim, fontWeight: 600 }}>{l}</span>
+        {VERDICT_TIERS.map(t => (
+          <div key={t} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: VERDICT[t].dot }} />
+            <span style={{ fontSize: 11, color: C.inkDim, fontWeight: 600 }}>{VERDICT[t].short}</span>
           </div>
         ))}
       </div>
@@ -3118,7 +3212,7 @@ const BIG_EVENTS = [
 ];
 
 function NewsTab() {
-  const leagues = ["WNBA", "NBA", "MLB", "NFL", "EPL", "NHL"];
+  const leagues = ["WNBA", "NBA", "MLB", "NFL", "CFB", "WVB", "EPL", "NHL"];
   const [league, setLeague] = useState("WNBA");
   const [articles, setArticles] = useState(null); // null = loading
   useEffect(() => {
@@ -3360,7 +3454,7 @@ function SeriesBox({ s }) {
 const STANDINGS_UPDATED = "July 15, 2026 · 9:00 AM CT";
 
 function StandingsTab() {
-  const leagues = ["WNBA", "NBA", "MLB", "NFL", "EPL", "MLS", "NHL"];
+  const leagues = ["WNBA", "NBA", "MLB", "NFL", "CFB", "WVB", "EPL", "MLS", "NHL"];
   const [view, setView] = useState("WNBA");
   const lc = LEAGUE_COLORS[view];
 
@@ -3447,6 +3541,61 @@ function StandingsTab() {
                     }}>{v}</span>
                   );
                 })}
+              </div>
+              {isCut && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 14px", background: C.bg }}>
+                  <div style={{ flex: 1, height: 0, borderTop: `2px dashed ${C.red}` }} />
+                  <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.08em", color: C.red }}>PLAYOFF CUT LINE</span>
+                  <div style={{ flex: 1, height: 0, borderTop: `2px dashed ${C.red}` }} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {footNote && <div style={{ fontSize: 12, color: C.inkFaint, marginTop: 10, lineHeight: 1.5 }}>{footNote}</div>}
+    </>
+  );
+
+  // AP-poll renderer for college (CFB / WVB): rank, movement since last week,
+  // record, and first-place votes — the things the poll is actually about.
+  const renderPoll = (rows, cut, footNote) => (
+    <>
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ display: "flex", padding: "8px 14px", background: lc, fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", color: "#fff" }}>
+          <span style={{ width: 28 }}>#</span>
+          <span style={{ flex: 1 }}>TEAM</span>
+          <span style={{ width: 44, textAlign: "right" }}>MOVE</span>
+          <span style={{ width: 56, textAlign: "right" }}>RECORD</span>
+        </div>
+        {rows.map((t, i) => {
+          const inCut = cut > 0 && t.rank <= cut;
+          const isCut = cut > 0 && t.rank === cut;
+          // ESPN's trend is "+3" / "-2" / "-" relative to last week's poll.
+          const mv = String(t.trend || "").trim();
+          const up = mv.startsWith("+");
+          const down = mv.startsWith("-") && mv.length > 1;
+          return (
+            <div key={t.team}>
+              <div style={{
+                display: "flex", alignItems: "center", padding: "11px 14px",
+                background: inCut ? lc + "10" : C.surface,
+                borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}`,
+              }}>
+                <span style={{ width: 28, fontSize: 14, fontWeight: 900, color: inCut ? lc : C.inkFaint }}>{t.rank}</span>
+                <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+                  <TeamLogo team={t.team} size={22} />
+                  <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.team}</span>
+                  {t.firstPlaceVotes > 0 && (
+                    <span title={`${t.firstPlaceVotes} first-place votes`} style={{ fontSize: 9, fontWeight: 800, color: lc, border: `1px solid ${lc}55`, borderRadius: 3, padding: "1px 4px", flexShrink: 0 }}>
+                      {t.firstPlaceVotes} 1st
+                    </span>
+                  )}
+                </span>
+                <span style={{ width: 44, textAlign: "right", fontSize: 12, fontWeight: 800, color: up ? "#1F7A4D" : down ? "#C0392B" : C.inkFaint }}>
+                  {up ? `▲${mv.slice(1)}` : down ? `▼${mv.slice(1)}` : "–"}
+                </span>
+                <span style={{ width: 56, textAlign: "right", fontSize: 12.5, fontWeight: 700, color: C.inkMid }}>{t.record || "—"}</span>
               </div>
               {isCut && (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 14px", background: C.bg }}>
@@ -3574,11 +3723,23 @@ function StandingsTab() {
                 : "GB = games behind the leader."}
           </div>
         </>
+      ) : (liveIsTable && s.isPoll) ? (
+        renderPoll(liveData, s.playoffCut,
+          view === "CFB"
+            ? "Voted on weekly by sportswriters. ▲▼ shows movement since last week. The top 12 make the College Football Playoff."
+            : "Voted on weekly by coaches and writers. ▲▼ shows movement since last week. The top teams host NCAA Tournament matches in December.")
       ) : liveIsTable ? (
         renderTable(liveData, PLAYOFF_CUT[view] || 0,
           view === "EPL" ? ["PTS", "PLAYED"] : ["W–L", "GB"],
           view === "WNBA" ? "Green = currently in the playoffs. GB = games behind the leader."
             : view === "EPL" ? "Ranked by points (3 for a win, 1 for a draw). The top clubs qualify for the Champions League." : null)
+      ) : s.isPoll ? (
+        <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "22px 20px" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 6 }}>Poll not out yet</div>
+          <div style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.6 }}>
+            The {s.label.replace(/^.*?(AP )?Top 25$/, "Top 25")} refreshes once a week during the season. Check back after this week's games.
+          </div>
+        </div>
       ) : (
         s.rows && renderTable(
           s.rows, s.playoffCut, s.cols,
