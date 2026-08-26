@@ -148,9 +148,12 @@ export function scoreCompetition(comp, ev, network, leaguePath) {
   const hp = winPct(H), ap = winPct(A);
   const hr = apRank(H), ar = apRank(A);
 
+  // ESPN's odds array can contain null entries (the Premier League feed does),
+  // so find the first usable one rather than assuming odds[0] is an object.
   let spread = null;
   const odds = (comp && comp.odds) || [];
-  if (odds.length && typeof odds[0].spread === 'number') spread = odds[0].spread;
+  const line = odds.find(o => o && typeof o.spread === 'number');
+  if (line) spread = line.spread;
 
   // How far into the regular season are we? Drives the playoff-race signal.
   const seasonLen = SEASON_LENGTH[leaguePath];
@@ -188,7 +191,12 @@ export function scoreCompetition(comp, ev, network, leaguePath) {
   // season: no records, no rank, no line) the only signal left is TV, and
   // dividing by 15 would turn "it's on ESPN+" into a 90% must-watch. The floor
   // says: with this little evidence, a game cannot climb very high.
-  max = Math.max(max, 45);
+  // Do we actually know anything about how good these teams are? In week 1
+  // every record is 0-0 and nobody's ranked, so the only signals left are the
+  // TV slot and the betting line — enough to say "this looks watchable", not
+  // enough to crown a must-watch. Hold such games to a higher bar.
+  const knowsTeams = hasRecords || hr != null || ar != null;
+  max = Math.max(max, knowsTeams ? 45 : 58);
 
   const earned = parts.quality + parts.ranking + parts.closeness + parts.tv + parts.race;
   // Stakes is a bonus on top rather than part of the denominator — a game with
@@ -212,6 +220,9 @@ export function scoreCompetition(comp, ev, network, leaguePath) {
   else if (score >= 45) verdict = 4;
   else if (score >= 28) verdict = 3;
   else verdict = 2;
+  // "Must watch" is a claim about the teams, so don't make it when we have no
+  // read on them at all — cap at "worth your time" instead.
+  if (!knowsTeams && verdict > 4) verdict = 4;
 
   return { verdict, score, reasons, parts };
 }

@@ -43,6 +43,13 @@ function dayNum(dateKey) {
   return parseInt(dateKey.split("-")[2], 10);
 }
 
+// Days since epoch — for comparing two dateKeys across months/years, which
+// dayNum (day-of-month only) can't do.
+function epochDay(dateKey) {
+  const [y, m, d] = String(dateKey).split("-").map(Number);
+  return Math.floor(Date.UTC(y, m - 1, d) / 86400000);
+}
+
 function monthName(dateKey) {
   const [y, m] = dateKey.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "long" });
@@ -705,20 +712,110 @@ const CAL_EVENTS = {
 };
 
 // Season-context used by the AI rundown and the Sports 101 tab
+/* Season timelines, DATE-DRIVEN so they stop going stale.
+   Previously `phase` and `pct` were hand-typed numbers that drifted out of date
+   within weeks (WNBA sat at "just past the halfway mark" well into August).
+   Now each league declares its milestone dates once and progress/phase/next-up
+   are computed from today. `when` is the human label — kept vaguer than the ISO
+   date wherever the real schedule isn't pinned down yet, so we never show more
+   precision than we actually have. */
 const SEASON_CONTEXT = {
-  WNBA: { phase: "Regular Season", pct: 54, detail: "Just past the halfway mark of the 44-game schedule running May through September. Playoffs (8 teams) begin mid-September.",
-    upNext: [["Now", "Regular season"], ["Mid-Sept", "Playoffs begin (top 8)"], ["October", "WNBA Finals"]] },
-  NBA:  { phase: "Off-season", pct: 0, detail: "The Knicks won the 2026 championship, beating the Spurs 4–1. The season is over — next season tips off in October.",
-    upNext: [["Now", "Off-season"], ["June", "NBA Draft"], ["October", "Next season tips off"]] },
-  MLB:  { phase: "Regular Season", pct: 55, detail: "Just past the All-Star break of a 162-game grind. Standings tighten in August; playoffs start in October.",
-    upNext: [["Now", "Regular season"], ["July", "All-Star Game"], ["October", "Playoffs & World Series"]] },
-  NFL:  { phase: "Off-season", pct: 0, detail: "Nothing live yet. Preseason starts in August, regular season September 10.",
-    upNext: [["Now", "Off-season"], ["August", "Preseason"], ["Sept 10", "Regular season kicks off"]] },
-  WC:   { phase: "The Final", pct: 97, detail: "The tournament is down to two: Spain vs defending champions Argentina in the final, Sunday July 19 at MetLife Stadium.",
-    upNext: [["Now", "Final: Spain vs Argentina"], ["Sun July 19", "World Cup Final · MetLife Stadium · Fox"]] },
-  EPL:  { phase: "Season Kickoff", pct: 3, detail: "The 2026-27 Premier League season kicks off in mid-to-late August — 20 clubs, 38 matches each through May, ranked by points.",
-    upNext: [["August", "Season kicks off"], ["January", "Winter transfer window + holiday fixtures"], ["May", "Final day — title, European spots & relegation decided"]] },
+  WNBA: {
+    start: "2026-05-15", detail: "The 44-game regular season is in its final stretch — playoff seeding is being decided right now. The top 8 teams advance.",
+    milestones: [
+      { date: "2026-05-15", label: "Regular season", when: "Mid-May", phase: "Regular season" },
+      { date: "2026-09-14", label: "Playoffs begin (top 8)", when: "Mid-September", phase: "Playoffs" },
+      { date: "2026-10-03", label: "WNBA Finals", when: "Early October", phase: "Finals" },
+    ],
+  },
+  MLB: {
+    start: "2026-03-26", detail: "The 162-game season is winding down. August and September are when wild-card races tighten and contenders separate from the pack.",
+    milestones: [
+      { date: "2026-03-26", label: "Regular season", when: "Late March", phase: "Regular season" },
+      { date: "2026-07-14", label: "All-Star Game", when: "Mid-July" },
+      { date: "2026-09-29", label: "Playoffs begin", when: "Late September", phase: "Playoffs" },
+      { date: "2026-10-20", label: "World Series", when: "Late October", phase: "World Series" },
+    ],
+  },
+  CFB: {
+    start: "2026-08-22", detail: "College football season just kicked off. Teams play about 12 games, and the weekly AP Top 25 poll drives everything — one loss can end a title run.",
+    milestones: [
+      { date: "2026-08-22", label: "Season kicks off", when: "Late August", phase: "Regular season" },
+      { date: "2026-12-05", label: "Conference championships", when: "Early December", phase: "Championship week" },
+      { date: "2026-12-19", label: "College Football Playoff", when: "Mid-December", phase: "Playoff" },
+      { date: "2027-01-11", label: "National Championship", when: "Mid-January", phase: "Title game" },
+    ],
+  },
+  WVB: {
+    start: "2026-08-21", detail: "College volleyball is underway — non-conference tournaments first, then conference play. Matches are best-of-five sets.",
+    milestones: [
+      { date: "2026-08-21", label: "Season begins", when: "Late August", phase: "Non-conference play" },
+      { date: "2026-09-18", label: "Conference play", when: "Mid-September", phase: "Conference play" },
+      { date: "2026-12-03", label: "NCAA Tournament", when: "Early December", phase: "NCAA Tournament" },
+      { date: "2026-12-17", label: "Final Four", when: "Mid-December", phase: "Final Four" },
+    ],
+  },
+  EPL: {
+    start: "2026-08-15", detail: "The 2026-27 Premier League season is just underway — 20 clubs, 38 matches each, no playoffs. Most points in May wins the title.",
+    milestones: [
+      { date: "2026-08-15", label: "Season kicks off", when: "Mid-August", phase: "Regular season" },
+      { date: "2027-01-01", label: "Winter transfer window", when: "January" },
+      { date: "2027-05-23", label: "Final day — title & relegation decided", when: "Late May", phase: "Final day" },
+    ],
+  },
+  NFL: {
+    start: "2026-09-10", preLabel: "Preseason", detail: "Preseason games are on now; the regular season kicks off in early September. Every team plays 17 games, and with so few of them each one carries weight.",
+    milestones: [
+      { date: "2026-09-10", label: "Regular season kicks off", when: "Early September", phase: "Regular season" },
+      { date: "2027-01-09", label: "Playoffs begin", when: "Mid-January", phase: "Playoffs" },
+      { date: "2027-02-07", label: "Super Bowl", when: "Early February", phase: "Super Bowl" },
+    ],
+  },
+  NBA: {
+    start: "2026-10-20", preLabel: "Off-season", detail: "The Knicks beat the Spurs 4–1 for the 2026 title. The league is in its off-season — training camps open late September, and the new season tips off in October.",
+    milestones: [
+      { date: "2026-10-20", label: "Season tips off", when: "Late October", phase: "Regular season" },
+      { date: "2027-02-14", label: "All-Star Weekend", when: "Mid-February" },
+      { date: "2027-04-17", label: "Playoffs begin", when: "Mid-April", phase: "Playoffs" },
+      { date: "2027-06-03", label: "NBA Finals", when: "June", phase: "Finals" },
+    ],
+  },
 };
+
+// Turn a league's milestone dates into live progress: how far through the
+// season we are, what phase that is, and what's next (with its date).
+function seasonStatus(league, todayK) {
+  const ctx = SEASON_CONTEXT[league];
+  if (!ctx) return null;
+  const t = epochDay(todayK);
+  const ms = (ctx.milestones || [])
+    .map(m => ({ ...m, n: epochDay(m.date) }))
+    .sort((a, b) => a.n - b.n);
+  if (!ms.length) return null;
+
+  const startN = epochDay(ctx.start);
+  const lastN = ms[ms.length - 1].n;
+  const next = ms.find(m => m.n > t) || null;
+  // Only milestones that OPEN a period set the current phase. One-day events
+  // like the All-Star Game carry no `phase`, so the standing phase survives
+  // them — otherwise late-August MLB would read "All-Star Game".
+  const passedPhases = ms.filter(m => m.n <= t && m.phase);
+
+  const started = t >= startN;
+  const pct = !started ? 0
+    : Math.max(2, Math.min(100, Math.round(((t - startN) / Math.max(1, lastN - startN)) * 100)));
+  const phase = !started ? (ctx.preLabel || "Off-season")
+    : (passedPhases.length ? passedPhases[passedPhases.length - 1].phase : "Underway");
+
+  return {
+    pct, phase, next, detail: ctx.detail, started,
+    daysToNext: next ? next.n - t : null,
+    // Sort key: in-season leagues first, furthest along at the top; leagues
+    // that haven't started sort to the bottom by how soon they begin.
+    sortKey: started ? 1000 - pct : 2000 + Math.max(0, startN - t),
+    milestones: ms,
+  };
+}
 
 // Sport emoji per league — used on headlines everywhere
 const SPORT_EMOJI = { WNBA: "🏀", NBA: "🏀", MLB: "⚾", NFL: "🏈", NHL: "🏒", MLS: "⚽", WC: "⚽", EPL: "⚽", CFB: "🏈", WVB: "🏐" };
@@ -1968,7 +2065,7 @@ function CalendarTab({ alerts, onAlert }) {
       )}
       {/* Sport filter pills */}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, paddingBottom: 2 }}>
-        {["ALL", "WNBA", "NBA", "MLB", "CFB", "WVB", "NFL", "NHL", "MLS"].map(lg => (
+        {["ALL", "WNBA", "NBA", "MLB", "CFB", "WVB", "NFL", "EPL", "NHL", "MLS"].map(lg => (
           <button key={lg} onClick={() => setCalFilters({ sport: lg, team: "ALL" })} style={{
             flexShrink: 0, padding: "6px 13px", borderRadius: 16, cursor: "pointer",
             background: calFilters.sport === lg ? (LEAGUE_COLORS[lg] || C.red) : C.surface,
@@ -2996,6 +3093,32 @@ Question: ${q}`;
 
 const SPORT_101 = [
   {
+    league: "CFB",
+    headline: "College football — the sport that runs on rankings",
+    season: "Late Aug → January · ~12 games each",
+    progress: "Season just kicked off",
+    sections: [
+      { h: "Why the rankings matter so much", b: "Teams only play about 12 games — far fewer than pro leagues — so there's no room to slip. A weekly poll of sportswriters (the AP Top 25) ranks the best teams, and where you sit in that poll shapes whether you get a shot at the title." },
+      { h: "Conferences", b: "Schools are grouped into conferences (SEC, Big Ten, Big 12, ACC and others) and mostly play within their group. Each conference crowns a champion in early December, which is a big deal on its own." },
+      { h: "The College Football Playoff", b: "The top 12 teams make a bracket that runs through December and January, ending with the National Championship game. Teams that miss the playoff play in 'bowl games' — standalone exhibition matchups with sponsor names." },
+      { h: "Rivalries are the whole point", b: "Some matchups have been played for over a century and can define a season regardless of records — Ohio State–Michigan, Alabama–Auburn, Army–Navy. Late November is stacked with them." },
+      { h: "Why casual fans love it", b: "Enormous crowds, marching bands, and genuine chaos — unranked teams knock off giants every single week. Saturdays in the fall are the whole ritual, and games are on ABC, ESPN, FOX, NBC and CBS." },
+    ],
+  },
+  {
+    league: "WVB",
+    headline: "College volleyball — fast, loud, and growing quickly",
+    season: "Late Aug → December",
+    progress: "Season underway",
+    sections: [
+      { h: "How a match works", b: "Matches are best-of-five 'sets.' A set goes to 25 points (win by 2), but the deciding fifth set only goes to 15. So a final score looks like 3–1 — sets won, not points." },
+      { h: "Scoring is simple", b: "Every rally ends in a point for one side, no matter who served. A team wins the rally by grounding the ball in the opponent's court or forcing an error." },
+      { h: "The season shape", b: "Teams open with non-conference tournaments in late August, move into conference play in September, and build toward the NCAA Tournament in December — a 64-team bracket ending in the Final Four." },
+      { h: "Powerhouse programs", b: "Nebraska, Wisconsin, Texas, Penn State and Stanford draw enormous crowds — Nebraska once filled a football stadium with over 92,000 fans for a volleyball match, a world record for a women's sporting event." },
+      { h: "Why casual fans love it", b: "Rallies are quick and easy to follow with no rules knowledge required, matches take about two hours, and the atmosphere in the big arenas is genuinely electric. Most matches stream on ESPN+ with the big ones on ESPN2 or FOX." },
+    ],
+  },
+  {
     league: "EPL",
     headline: "English soccer's top flight — the Premier League",
     season: "August → May · 38 games each",
@@ -3059,7 +3182,7 @@ const SPORT_101 = [
 ];
 
 // When the hand-curated tabs (Sports 101, Events) were last reviewed.
-const CONTENT_UPDATED = "August 11, 2026";
+const CONTENT_UPDATED = "August 26, 2026";
 
 function UpdatedNote({ label }) {
   return (
@@ -3071,17 +3194,22 @@ function UpdatedNote({ label }) {
 }
 
 function Sports101Tab() {
-  const [open, setOpen] = useState("WNBA");
+  const today = todayKey();
+  // Order by how far along each season is: deepest in-season first (playoff
+  // races are what's urgent), then leagues that haven't started, soonest first.
+  const ordered = SPORT_101
+    .map(s => ({ s, st: seasonStatus(s.league, today) }))
+    .sort((a, b) => (a.st ? a.st.sortKey : 9999) - (b.st ? b.st.sortKey : 9999));
+  const [open, setOpen] = useState(() => (ordered[0] && ordered[0].s.league) || "WNBA");
   return (
     <div>
       <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.6, marginBottom: 12 }}>
-        New to a sport, or just fuzzy on how it all works? Here's the plain-English version — where each season stands right now, and how the playoffs and series actually work.
+        New to a sport, or just fuzzy on how it all works? Here's the plain-English version — where each season stands right now, and how the playoffs and series actually work. Sports are listed by how far along their season is.
       </p>
       <UpdatedNote label="Season info" />
-      {SPORT_101.map(s => {
+      {ordered.map(({ s, st }) => {
         const lc = LEAGUE_COLORS[s.league];
         const isOpen = open === s.league;
-        const ctx = SEASON_CONTEXT[s.league];
         return (
           <div key={s.league} style={{
             background: C.surface, borderRadius: 12, marginBottom: 10, overflow: "hidden",
@@ -3094,16 +3222,32 @@ function Sports101Tab() {
                 <span style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>{s.season}</span>
                 <span style={{ marginLeft: "auto", color: "#fff", fontSize: 13, transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▾</span>
               </div>
-              {/* progress bar + phase */}
+              {/* progress bar + phase + what's next, all computed from dates */}
               <div style={{ padding: "13px 16px" }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 8 }}>{s.headline}</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
                   <div style={{ flex: 1, height: 6, background: C.lineSoft, borderRadius: 3, overflow: "hidden" }}>
-                    <div style={{ width: `${ctx.pct}%`, height: "100%", background: lc, borderRadius: 3 }} />
+                    <div style={{ width: `${st ? st.pct : 0}%`, height: "100%", background: lc, borderRadius: 3, transition: "width 0.3s" }} />
                   </div>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: lc, whiteSpace: "nowrap" }}>{ctx.phase}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: lc, whiteSpace: "nowrap" }}>{st ? st.phase : ""}</span>
                 </div>
-                <div style={{ fontSize: 12, color: C.inkDim }}>{s.progress}</div>
+                {/* Next milestone with its date — so "what's coming" is concrete. */}
+                {st && st.next && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: C.inkFaint, letterSpacing: "0.04em" }}>NEXT</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: C.ink }}>{st.next.label}</span>
+                    <span style={{ fontSize: 12, color: C.inkDim }}>· {st.next.when}</span>
+                    {st.daysToNext != null && (
+                      <span style={{
+                        fontSize: 10.5, fontWeight: 800, color: "#fff", background: lc,
+                        borderRadius: 3, padding: "2px 6px",
+                      }}>
+                        {st.daysToNext === 0 ? "TODAY" : st.daysToNext < 14 ? `IN ${st.daysToNext}D` : `IN ${Math.round(st.daysToNext / 7)} WK`}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: C.inkDim, lineHeight: 1.5 }}>{st ? st.detail : s.progress}</div>
               </div>
             </div>
 
@@ -3766,30 +3910,41 @@ function StandingsTab() {
       </div>
       <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 14 }}>{s.blurb}</p>
 
-      {/* What's next — season progression timeline */}
-      {SEASON_CONTEXT[view]?.upNext && (
-        <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px", marginBottom: 18 }}>
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>
-            WHAT'S NEXT
-          </div>
-          {SEASON_CONTEXT[view].upNext.map(([when, what], i, arr) => {
-            const current = i === 0;
-            return (
-              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: i === arr.length - 1 ? 0 : 9 }}>
-                <span style={{
-                  width: 8, height: 8, borderRadius: "50%", flexShrink: 0, marginTop: 4,
-                  background: current ? lc : "transparent",
-                  border: current ? "none" : `2px solid ${C.line}`,
-                }} />
-                <div style={{ flex: 1 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 800, color: current ? lc : C.ink }}>{what}</span>
-                  <span style={{ fontSize: 12, color: C.inkFaint, marginLeft: 7 }}>{when}</span>
+      {/* What's next — season progression timeline, driven by real dates so the
+          "you are here" dot moves on its own instead of being hand-maintained. */}
+      {(() => {
+        const st = seasonStatus(view, todayKey());
+        if (!st) return null;
+        return (
+          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px", marginBottom: 18 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>
+              WHAT'S NEXT
+            </div>
+            {st.milestones.map((m, i, arr) => {
+              const isNext = st.next && m.date === st.next.date;
+              const done = epochDay(m.date) <= epochDay(todayKey());
+              return (
+                <div key={m.date} style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: i === arr.length - 1 ? 0 : 9 }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: "50%", flexShrink: 0, marginTop: 4,
+                    background: isNext ? lc : done ? C.line : "transparent",
+                    border: isNext || done ? "none" : `2px solid ${C.line}`,
+                  }} />
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: isNext ? lc : done ? C.inkFaint : C.ink }}>{m.label}</span>
+                    <span style={{ fontSize: 12, color: C.inkFaint, marginLeft: 7 }}>{m.when}</span>
+                    {isNext && st.daysToNext != null && (
+                      <span style={{ fontSize: 11, color: lc, fontWeight: 700, marginLeft: 7 }}>
+                        · {st.daysToNext === 0 ? "today" : `in ${st.daysToNext} day${st.daysToNext === 1 ? "" : "s"}`}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* NBA: last season's championship bracket — only when we have no live standings */}
       {view === "NBA" && !hasLive && (
@@ -4072,14 +4227,23 @@ async function fetchWiki(name, league) {
 }
 
 // Coach avatar — ESPN has no coach photos, so pull one from Wikipedia.
-function CoachAvatar({ name, team, league, lc }) {
-  const [photo, setPhoto] = useState("");
+// Cached per coach so a list of them doesn't refire the same lookups on every
+// render, and so a photo already fetched elsewhere shows instantly.
+const COACH_PHOTO_CACHE = {};
+function CoachAvatar({ name, team, league, lc, size = 34 }) {
+  const [photo, setPhoto] = useState(() => COACH_PHOTO_CACHE[name] || "");
   useEffect(() => {
+    if (COACH_PHOTO_CACHE[name]) { setPhoto(COACH_PHOTO_CACHE[name]); return; }
     let cancelled = false;
-    fetchWiki(name, league).then(w => { if (!cancelled && w && w.thumbnail) setPhoto(w.thumbnail); }).catch(() => {});
+    fetchWiki(name, league).then(w => {
+      if (w && w.thumbnail) {
+        COACH_PHOTO_CACHE[name] = w.thumbnail;
+        if (!cancelled) setPhoto(w.thumbnail);
+      }
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [name, league]);
-  return <Headshot src={photo} name={name} size={34} lc={lc} />;
+  return <Headshot src={photo} name={name} size={size} lc={lc} />;
 }
 
 // One roster player row: tap "see more" to read a Wikipedia blurb + open the article.
@@ -4540,7 +4704,9 @@ function PlayersTab({ target }) {
                       {coaches.map((c, i) => (
                         <div key={c.name} onClick={() => setSelectedPlayer({ name: c.name, team: c.team, pos: c.role || "Coach", league: lg, isCoach: true })}
                           style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 14px", borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}`, cursor: "pointer" }}>
-                          <TeamLogo team={c.team} size={26} />
+                          {/* The coach's own photo, not the team crest — the row is
+                              about the person, and the team name sits right below. */}
+                          <CoachAvatar name={c.name} team={c.team} league={lg} lc={lc} size={32} />
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{c.name}</div>
                             <div style={{ fontSize: 11, color: C.inkFaint }}>{c.team}</div>
