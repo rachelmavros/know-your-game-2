@@ -1634,8 +1634,18 @@ function HeroCard({ game, alertOn, onAlert }) {
         <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.9)" }}>{game.day} · {game.time}</span>
       </div>
       <div style={{ padding: "22px 20px 24px" }}>
-        <div style={{ fontSize: 28, fontWeight: 900, color: C.ink, lineHeight: 1.1, letterSpacing: "-0.02em", marginBottom: 6 }}>
-          {game.away}<span style={{ fontSize: 17, color: C.inkFaint, fontWeight: 400, margin: "0 10px" }}>at</span>{game.home}
+        {/* Team crests alongside the matchup — every other card shows them, and
+            the hero is the one a casual fan looks at first. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
+            <TeamLogo team={game.away} size={38} />
+            <span style={{ fontSize: 28, fontWeight: 900, color: C.ink, lineHeight: 1.1, letterSpacing: "-0.02em" }}>{game.away}</span>
+          </span>
+          <span style={{ fontSize: 17, color: C.inkFaint, fontWeight: 400 }}>{game.atWord || "at"}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
+            <TeamLogo team={game.home} size={38} />
+            <span style={{ fontSize: 28, fontWeight: 900, color: C.ink, lineHeight: 1.1, letterSpacing: "-0.02em" }}>{game.home}</span>
+          </span>
         </div>
         <div style={{ fontSize: 14, color: lc, fontWeight: 800, marginBottom: 14 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>
         <div style={{ marginBottom: 14 }}><VerdictLine level={game.verdict} why={game.verdictWhy} /></div>
