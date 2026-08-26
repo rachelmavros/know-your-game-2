@@ -60,6 +60,21 @@ function rankPoints(hr, ar) {
   return Math.round(Math.min(25, pts));
 }
 
+// 0-14: playoff pressure. Late in a season, a game between two teams scrapping
+// for the last postseason spot is worth more than the same two teams in May.
+// Scales with how far into the season we are, so it stays quiet in the spring
+// and gets loud in the stretch run.
+function racePoints(hp, ap, seasonPct) {
+  if (hp == null || ap == null || seasonPct == null) return 0;
+  if (seasonPct < 0.55) return 0;                    // too early to matter
+  // "In the mix" = hovering around .500, where playoff spots are actually
+  // decided. Runaway leaders and lottery teams aren't racing anyone.
+  const contention = v => 1 - Math.min(1, Math.abs(v - 0.5) / 0.28);
+  const both = Math.min(contention(hp), contention(ap));
+  const lateness = Math.min(1, (seasonPct - 0.55) / 0.45);
+  return Math.round(14 * both * lateness);
+}
+
 // 0-20: is it likely to be CLOSE? Blowouts aren't fun to watch.
 // Prefers the betting spread; falls back to how similar the records are.
 function closenessPoints(spread, hp, ap) {
@@ -110,7 +125,22 @@ function stakesPoints(notes, eventName) {
  * Score one ESPN competition. Returns { verdict, score, reasons }.
  * verdict: 5 MUST WATCH | 4 WORTH YOUR TIME | 3 GOOD GAME | 2 CASUAL VIEWING
  */
-export function scoreCompetition(comp, ev, network) {
+// Regular-season length per ESPN league path, used to tell how deep into the
+// season a game sits. College is left out: its short seasons and poll-driven
+// stakes are already captured by the ranking signal.
+const SEASON_LENGTH = {
+  'basketball/wnba': 44, 'basketball/nba': 82,
+  'baseball/mlb': 162, 'football/nfl': 17, 'hockey/nhl': 82,
+};
+
+function gamesPlayed(competitor) {
+  const recs = (competitor && competitor.records) || [];
+  const overall = recs.find(r => r.type === 'total') || recs[0];
+  const m = overall && overall.summary && String(overall.summary).match(/^(\d+)-(\d+)/);
+  return m ? Number(m[1]) + Number(m[2]) : null;
+}
+
+export function scoreCompetition(comp, ev, network, leaguePath) {
   const cs = (comp && comp.competitors) || [];
   const H = cs.find(c => c.homeAway === 'home') || cs[0];
   const A = cs.find(c => c.homeAway === 'away') || cs[1];
@@ -122,12 +152,21 @@ export function scoreCompetition(comp, ev, network) {
   const odds = (comp && comp.odds) || [];
   if (odds.length && typeof odds[0].spread === 'number') spread = odds[0].spread;
 
+  // How far into the regular season are we? Drives the playoff-race signal.
+  const seasonLen = SEASON_LENGTH[leaguePath];
+  let seasonPct = null;
+  if (seasonLen) {
+    const gp = Math.max(gamesPlayed(H) || 0, gamesPlayed(A) || 0);
+    if (gp > 0) seasonPct = Math.min(1, gp / seasonLen);
+  }
+
   const parts = {
     quality:   qualityPoints(hp, ap),
     ranking:   rankPoints(hr, ar),
     closeness: closenessPoints(spread, hp, ap),
     tv:        tvPoints(network),
     stakes:    stakesPoints(comp && comp.notes, ev && ev.name),
+    race:      racePoints(hp, ap, seasonPct),
   };
 
   // Normalize against the points ACTUALLY AVAILABLE for this game, because
@@ -143,6 +182,7 @@ export function scoreCompetition(comp, ev, network) {
   if (hr != null || ar != null) max += 25;         // ranking
   if (spread != null) max += 20;                   // closeness via odds
   else if (hp != null && ap != null) max += 14;    // closeness via records
+  if (parts.race > 0 || (seasonPct != null && seasonPct >= 0.55)) max += 14;  // playoff race
 
   // Floor the denominator. When we know almost nothing about a game (early
   // season: no records, no rank, no line) the only signal left is TV, and
@@ -150,7 +190,7 @@ export function scoreCompetition(comp, ev, network) {
   // says: with this little evidence, a game cannot climb very high.
   max = Math.max(max, 45);
 
-  const earned = parts.quality + parts.ranking + parts.closeness + parts.tv;
+  const earned = parts.quality + parts.ranking + parts.closeness + parts.tv + parts.race;
   // Stakes is a bonus on top rather than part of the denominator — a game with
   // no playoff/rivalry note shouldn't be penalized for the note's absence.
   const pct = Math.max(0, Math.min(1, (earned + parts.stakes) / Math.max(1, max)));
@@ -161,6 +201,7 @@ export function scoreCompetition(comp, ev, network) {
   if (hr != null && ar != null) reasons.push(`#${Math.min(hr, ar)} vs #${Math.max(hr, ar)}`);
   else if (hr != null || ar != null) reasons.push(`Ranked team (#${hr != null ? hr : ar})`);
   if (parts.stakes >= 9) reasons.push('High stakes');
+  if (parts.race >= 7) reasons.push('Playoff race');
   if (parts.closeness >= 15 || (spread == null && parts.closeness >= 11)) reasons.push('Expected to be close');
   if (parts.tv >= 15) reasons.push(`National TV${network ? ` (${network})` : ''}`);
   else if (parts.tv >= 11) reasons.push(network || 'National TV');
