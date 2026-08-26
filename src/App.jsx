@@ -162,12 +162,38 @@ function describeMatchup(away, home, league) {
   return { tagline, summary };
 }
 
+// BallDontLie ships the newest WNBA expansion teams with a blank city and a
+// full_name that's only the nickname:
+//   { id: 31, city: "", name: "Fire",  full_name: "Fire",  abbreviation: "POR" }
+//   { id: 30, city: "", name: "Tempo", full_name: "Tempo", abbreviation: "TOR" }
+// so games rendered as "Fire at Dallas Wings". full_name is present but wrong,
+// so it can't simply be fallen back on — patch by abbreviation instead.
+const BDL_TEAM_NAME_FIX = {
+  WNBA: { POR: "Portland Fire", TOR: "Toronto Tempo" },
+};
+
+function bdlTeamName(t, league) {
+  if (!t) return "";
+  const city = (t.city || "").trim();
+  const name = (t.name || "").trim();
+  const full = (t.full_name || "").trim();
+  // A blank city plus a full_name no longer than the nickname means the feed
+  // never filled this team in — fall back to our own canonical name.
+  if (!city && (!full || full === name)) {
+    const fix = (BDL_TEAM_NAME_FIX[league] || {})[t.abbreviation];
+    if (fix) return fix;
+  }
+  if (full && full !== name) return full;
+  if (city && name && !name.startsWith(city)) return `${city} ${name}`;
+  return full || name || city || "";
+}
+
 function mapBdlGame(g, league) {
   const home = g.home_team || {};
   const visitor = g.visitor_team || {};
   const { dateKey, time } = bdlToLocal(g.date);
-  const homeName = home.full_name || home.name || "";
-  const awayName = visitor.full_name || visitor.name || "";
+  const homeName = bdlTeamName(home, league);
+  const awayName = bdlTeamName(visitor, league);
   const { tagline, summary } = describeMatchup(awayName, homeName, league);
   return {
     league,
@@ -379,6 +405,11 @@ function useLiveSchedule() {
             if (!g) return;
             ev.status = mapState(g.state);
             ev.clock = g.detail;
+            // ESPN carries proper full team names; BallDontLie lags on expansion
+            // teams. Since this game already matched, adopt ESPN's naming so a
+            // future new team self-heals without waiting on a code change.
+            if (g.home && g.home.length > (ev.home || "").length) ev.home = g.home;
+            if (g.away && g.away.length > (ev.away || "").length) ev.away = g.away;
             if (g.homeScore != null) ev.score = { [ev.homeAbbr]: g.homeScore, [ev.awayAbbr]: g.awayScore };
             // Curated games keep their hand-written verdict; API-filled ones
             // (which all defaulted to a flat 3) take the computed rating.
@@ -1603,8 +1634,18 @@ function HeroCard({ game, alertOn, onAlert }) {
         <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.9)" }}>{game.day} · {game.time}</span>
       </div>
       <div style={{ padding: "22px 20px 24px" }}>
-        <div style={{ fontSize: 28, fontWeight: 900, color: C.ink, lineHeight: 1.1, letterSpacing: "-0.02em", marginBottom: 6 }}>
-          {game.away}<span style={{ fontSize: 17, color: C.inkFaint, fontWeight: 400, margin: "0 10px" }}>at</span>{game.home}
+        {/* Team crests alongside the matchup — every other card shows them, and
+            the hero is the one a casual fan looks at first. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
+            <TeamLogo team={game.away} size={38} />
+            <span style={{ fontSize: 28, fontWeight: 900, color: C.ink, lineHeight: 1.1, letterSpacing: "-0.02em" }}>{game.away}</span>
+          </span>
+          <span style={{ fontSize: 17, color: C.inkFaint, fontWeight: 400 }}>{game.atWord || "at"}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
+            <TeamLogo team={game.home} size={38} />
+            <span style={{ fontSize: 28, fontWeight: 900, color: C.ink, lineHeight: 1.1, letterSpacing: "-0.02em" }}>{game.home}</span>
+          </span>
         </div>
         <div style={{ fontSize: 14, color: lc, fontWeight: 800, marginBottom: 14 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>
         <div style={{ marginBottom: 14 }}><VerdictLine level={game.verdict} why={game.verdictWhy} /></div>
@@ -3450,6 +3491,16 @@ function SeriesBox({ s }) {
   );
 }
 
+// Tiny status pill used by the standings playoff-race column.
+function Chip({ bg, label, title }) {
+  return (
+    <span title={title} style={{
+      fontSize: 8.5, fontWeight: 800, letterSpacing: "0.05em", color: "#fff",
+      background: bg, borderRadius: 3, padding: "2px 5px", whiteSpace: "nowrap", flexShrink: 0,
+    }}>{label}</span>
+  );
+}
+
 // Standings are hand-maintained — bump this whenever you refresh the numbers.
 const STANDINGS_UPDATED = "July 15, 2026 · 9:00 AM CT";
 
@@ -3495,9 +3546,68 @@ function StandingsTab() {
 
   const CONF_LABEL = { AL: "American League", NL: "National League", East: "Eastern Conference", West: "Western Conference", AFC: "AFC", NFC: "NFC" };
   const PLAYOFF_CUT = { WNBA: 8, MLB: 6, NBA: 8, NFL: 7 };
+  // Regular-season length, so we can work out how many games a team has left.
+  const SEASON_GAMES = { WNBA: 44, NBA: 82, NFL: 17, MLB: 162 };
+
+  // Work out each team's playoff situation from the standings we already have —
+  // no extra API call. For a casual fan "how many more wins do they need?" is
+  // the most concrete way to say whether a team's season is still alive, so we
+  // compute a magic number (wins that would guarantee a spot) and flag teams
+  // that are mathematically out.
+  const computeRace = (rows, cut) => {
+    const total = SEASON_GAMES[view];
+    const race = {};
+    if (!total || !cut || !rows || rows.length <= cut) return race;
+
+    const played = t => (Number(t.w) || 0) + (Number(t.l) || 0);
+    const left = t => Math.max(0, total - played(t));
+    const maxWins = t => (Number(t.w) || 0) + left(t);
+
+    // The team holding the last playoff spot, and the best team outside it.
+    const holder = rows[cut - 1];
+    const chaser = rows[cut];
+    if (!holder || !chaser) return race;
+
+    rows.forEach((t, i) => {
+      const w = Number(t.w) || 0;
+      const rem = left(t);
+      const inSpot = i < cut;
+      // Eliminated: even winning out can't catch the team in the last spot.
+      const eliminated = !inSpot && maxWins(t) < (Number(holder.w) || 0);
+      // Clinched: even if the best chaser wins out, they can't catch this team.
+      const clinched = inSpot && w > maxWins(chaser);
+      // Magic number — wins still needed to be mathematically safe.
+      const target = inSpot ? maxWins(chaser) : (Number(holder.w) || 0);
+      const magic = Math.max(0, Math.min(rem, target - w + 1));
+      race[t.team] = { rem, eliminated, clinched, magic, inSpot };
+    });
+    return race;
+  };
+
+  // Compact playoff-race chip shown next to a team in the standings.
+  const RaceChip = ({ r }) => {
+    if (!r) return null;
+    if (r.clinched)   return <Chip bg="#1F7A4D" label="CLINCHED" title="Guaranteed a playoff spot" />;
+    if (r.eliminated) return <Chip bg="#9AA5B1" label="OUT" title="Mathematically eliminated from playoff contention" />;
+    // A magic number is only honest for a team currently HOLDING a spot. For a
+    // team chasing from outside, how many wins they need depends on results
+    // they don't control, so we say they're in the hunt rather than inventing
+    // a precise number.
+    if (!r.inSpot) {
+      return <Chip bg="#E8590C" label="IN THE HUNT" title={`Still alive for a playoff spot · ${r.rem} games left`} />;
+    }
+    if (r.magic <= 0) return null;
+    return (
+      <Chip
+        bg={r.magic <= 3 ? "#C8102E" : "#1D5BBF"}
+        label={`${r.magic} TO CLINCH`}
+        title={`${r.magic} more win${r.magic === 1 ? "" : "s"} guarantees a playoff spot · ${r.rem} games left`}
+      />
+    );
+  };
 
   // Shared table renderer — same layout as the loved WNBA table
-  const renderTable = (rows, playoffCut, cols, footNote) => (
+  const renderTable = (rows, playoffCut, cols, footNote, race) => (
     <>
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
         <div style={{ display: "flex", padding: "8px 14px", background: lc, fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", color: "#fff" }}>
@@ -3528,6 +3638,7 @@ function StandingsTab() {
                   <TeamLogo team={t.team} size={22} />
                   <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{t.team}</span>
                   {t.conf && <span style={{ fontSize: 9, fontWeight: 700, color: C.inkFaint, border: `1px solid ${C.line}`, borderRadius: 3, padding: "1px 4px" }}>{t.conf}</span>}
+                  <RaceChip r={race && race[t.team]} />
                 </span>
                 {statCells.map((v, j) => {
                   const isStreak = cols[j] === "STRK";
@@ -3618,7 +3729,8 @@ function StandingsTab() {
       {Object.keys(obj).map(k => (obj[k] && obj[k].length ? (
         <div key={k} style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", color: lc, marginBottom: 8 }}>{CONF_LABEL[k] || k}</div>
-          {renderTable(obj[k], cut, cols)}
+          {/* Each conference races for its own set of playoff spots. */}
+          {renderTable(obj[k], cut, cols, null, computeRace(obj[k], cut))}
         </div>
       ) : null))}
     </>
@@ -3711,6 +3823,41 @@ function StandingsTab() {
         </div>
       )}
 
+      {/* Playoff race summary — the "so what" before the numbers. */}
+      {(() => {
+        if (!liveIsTable || !PLAYOFF_CUT[view] || !SEASON_GAMES[view]) return null;
+        const race = computeRace(liveData, PLAYOFF_CUT[view]);
+        const vals = Object.entries(race);
+        if (!vals.length) return null;
+        const clinched = vals.filter(([, r]) => r.clinched).length;
+        const out = vals.filter(([, r]) => r.eliminated).length;
+        const alive = vals.length - clinched - out;
+        const closest = vals
+          .filter(([, r]) => !r.clinched && !r.eliminated && r.inSpot && r.magic > 0)
+          .sort((a, b) => a[1].magic - b[1].magic)[0];
+        const anyRem = vals[0][1].rem;
+        return (
+          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px", marginBottom: 18 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 8 }}>
+              PLAYOFF RACE
+            </div>
+            <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 8 }}>
+              {[["Clinched", clinched, "#1F7A4D"], ["Still alive", alive, lc], ["Eliminated", out, "#9AA5B1"]].map(([l, n, c]) => (
+                <div key={l}>
+                  <div style={{ fontSize: 19, fontWeight: 900, color: c }}>{n}</div>
+                  <div style={{ fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>{l}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 12.5, color: C.inkDim, lineHeight: 1.55 }}>
+              {PLAYOFF_CUT[view]} teams make the playoffs
+              {anyRem > 0 ? ` · about ${anyRem} games left in the season` : ""}
+              {closest ? `. ${closest[0]} is closest to locking in a spot — ${closest[1].magic} more win${closest[1].magic === 1 ? "" : "s"} does it.` : "."}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Standings tables — grouped (MLB/NBA/NFL), single (WNBA live), or curated */}
       {liveIsGrouped ? (
         <>
@@ -3731,8 +3878,9 @@ function StandingsTab() {
       ) : liveIsTable ? (
         renderTable(liveData, PLAYOFF_CUT[view] || 0,
           view === "EPL" ? ["PTS", "PLAYED"] : ["W–L", "GB"],
-          view === "WNBA" ? "Green = currently in the playoffs. GB = games behind the leader."
-            : view === "EPL" ? "Ranked by points (3 for a win, 1 for a draw). The top clubs qualify for the Champions League." : null)
+          view === "WNBA" ? "Green = currently in the playoffs. GB = games behind the leader. The tag next to each team shows how many more wins would guarantee a playoff spot — tap and hold for detail."
+            : view === "EPL" ? "Ranked by points (3 for a win, 1 for a draw). The top clubs qualify for the Champions League." : null,
+          computeRace(liveData, PLAYOFF_CUT[view] || 0))
       ) : s.isPoll ? (
         <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "22px 20px" }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 6 }}>Poll not out yet</div>
@@ -4849,6 +4997,11 @@ export default function App() {
       time: e.time, day: "Today", dateKey: e.dateKey,
       status: e.status || "upcoming", score: e.score || null, clock: e.clock || "",
       verdict: e.verdict || 3,
+      // Carry the rating rationale and records through, or the Today cards show
+      // a verdict badge with no explanation behind it.
+      verdictWhy: e.verdictWhy || [],
+      homeRecord: e.homeRecord || "", awayRecord: e.awayRecord || "",
+      homeRank: e.homeRank, awayRank: e.awayRank, atWord: e.atWord,
       tagline: e.tagline || "", summary: e.summary || e.note || "",
       channel: e.channel || "", channelUrl: "",
       fromApi: true,

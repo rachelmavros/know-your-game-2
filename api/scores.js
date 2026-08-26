@@ -54,7 +54,7 @@ export default async function handler(req, res) {
       for (const b of (comp.broadcasts || [])) { if (Array.isArray(b.names) && b.names[0]) { network = b.names[0]; break; } }
       // Rate the game from records / AP rank / spread / TV / stakes so the whole
       // slate gets a real verdict instead of a flat "good game" default.
-      const { verdict, reasons } = scoreCompetition(comp, ev, network);
+      const { verdict, reasons } = scoreCompetition(comp, ev, network, path);
       const rankOf = c => {
         const r = c.curatedRank && c.curatedRank.current;
         return (typeof r === 'number' && r > 0 && r < 99) ? r : null;

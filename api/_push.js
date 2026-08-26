@@ -54,9 +54,19 @@ export async function getTodayGames() {
       for (const g of (j.data || [])) {
         const iso = g.date || g.datetime || '';
         if (!iso || ctDateKey(iso) !== today) continue;
-        const home = (g.home_team && (g.home_team.full_name || g.home_team.display_name || g.home_team.name)) || g.home_team_name || '';
-        const away = (g.visitor_team && (g.visitor_team.full_name || g.visitor_team.name)) ||
-                     (g.away_team && (g.away_team.display_name || g.away_team.full_name || g.away_team.name)) || g.away_team_name || '';
+        // BallDontLie leaves `full_name` empty on newer expansion teams (Portland
+        // is city "Portland" + name "Fire" with no full_name), so fall back to
+        // city + nickname rather than shipping a push that reads "Fire at Dallas".
+        const teamName = t => {
+          if (!t) return '';
+          if (t.full_name) return t.full_name;
+          if (t.display_name) return t.display_name;
+          const city = (t.city || '').trim(), name = (t.name || '').trim();
+          if (city && name && !name.startsWith(city)) return `${city} ${name}`;
+          return name || city || '';
+        };
+        const home = teamName(g.home_team) || g.home_team_name || '';
+        const away = teamName(g.visitor_team) || teamName(g.away_team) || g.away_team_name || '';
         if (!home || !away) continue;
         out.push({ league: cfg.league, home: home.trim(), away: away.trim(), time: ctTime(iso) });
       }
