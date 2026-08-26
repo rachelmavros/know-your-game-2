@@ -3,7 +3,7 @@
 // Powers Premier League + college fixtures on Today/Calendar and live scores everywhere.
 //   /api/scores?league=EPL&start=2026-08-22&end=2026-09-15
 
-import { scoreCompetition } from './_verdict.js';
+import { scoreCompetition, isNationalTv } from './_verdict.js';
 
 const LEAGUE_PATH = {
   WNBA: 'basketball/wnba', MLB: 'baseball/mlb', NBA: 'basketball/nba',
@@ -78,7 +78,7 @@ export default async function handler(req, res) {
         detail: st.shortDetail || '',          // "Scheduled" | "Final" | "45'" | "Top 5th"
         homeScore: H.score != null && H.score !== '' ? Number(H.score) : null,
         awayScore: A.score != null && A.score !== '' ? Number(A.score) : null,
-        network,
+        network, isNationalTv: isNationalTv(network),
         verdict, verdictWhy: reasons,
         homeRank: rankOf(H), awayRank: rankOf(A),
         homeRecord: recOf(H), awayRecord: recOf(A),

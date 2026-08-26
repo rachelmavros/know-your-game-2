@@ -13,6 +13,19 @@
 const BIG_FOUR = ['ABC', 'CBS', 'NBC', 'FOX'];
 const MAJOR_CABLE = ['ESPN', 'ESPN2', 'TNT', 'TBS', 'FS1', 'USA', 'ION', 'NFLN', 'NBA TV', 'MLB Network', 'CBSSN', 'BTN', 'SECN', 'ACCN'];
 
+// Is this an actual TV network, as opposed to a streaming-only add-on tier
+// (ESPN+, SECN+, ACC Network Extra/"ACCNX", conference "digital networks",
+// a school's own YouTube feed)? Those exist for nearly every college game, so
+// treating them as "televised" would defeat the point of filtering by it.
+// Exact-match only — a substring match would let "ACCNX" pass on "ACCN".
+export function isNationalTv(network) {
+  if (!network) return false;
+  const n = String(network).toUpperCase().trim();
+  if (n.includes('+')) return false;               // ESPN+, SECN+, B1G+, MW+
+  if (BIG_FOUR.some(x => n === x || n.startsWith(x + ' '))) return true;
+  return MAJOR_CABLE.some(x => n === x || n.startsWith(x + ' ') || n.endsWith(' ' + x));
+}
+
 function winPct(competitor) {
   const recs = (competitor && competitor.records) || [];
   const overall = recs.find(r => r.type === 'total') || recs[0];

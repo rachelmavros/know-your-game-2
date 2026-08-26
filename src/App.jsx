@@ -381,13 +381,14 @@ function useLiveSchedule() {
       if (!cancelled) {
         ESPN_LEAGUES.forEach((cfg, i) => (espnSets[i] || []).forEach(g => {
           if (!g.dateKey || !g.home || !g.away) return;
-          // NOTE: no volleyball pre-filter here anymore — this `grouped` map
-          // feeds BOTH Today and Calendar. Dropping low-interest games at the
-          // source hid them from Calendar too, which has a full month grid and
-          // its own "notable vs other" collapsing (an expandable section, not a
-          // deletion) — Calendar had room for all of them. Today applies its
-          // own equivalent filter to `otherGames` further down, so full data
-          // stays here and each tab decides its own presentation.
+          // College volleyball runs ~200 games a day across every division —
+          // too many for either Today or Calendar's day view. Rather than the
+          // old "ranked or decent rating" bar (still let through ~185/day, since
+          // nearly every game has SOME broadcast — usually a school's own
+          // streaming feed), keep only games on an actual TV network. This is
+          // the one filter applied at the shared-data level (not just Today),
+          // since even Calendar's day list doesn't have room for 200 rows.
+          if (cfg.lg === "WVB" && !g.isNationalTv) return;
           // Rank prefix reads the way TV does: "#3 Ohio State".
           const withRank = (name, rank) => (rank ? `#${rank} ${name}` : name);
           const label = `${withRank(g.away, g.awayRank)} ${cfg.atWord} ${withRank(g.home, g.homeRank)} · ${cfg.blurb}`;
@@ -5205,14 +5206,9 @@ export default function App() {
       g.home === focusGame.home && g.away === focusGame.away);
     if (fg) hero = fg;
   }
-  // College volleyball runs ~200 games a day across every division — even the
-  // condensed "every other game" list would be a 200-row wall on Today. Trim
-  // to games a casual fan would plausibly watch (ranked team, national TV, or
-  // rated above filler); this is Today-only — Calendar keeps the full slate,
-  // since a month grid + day view has room for all of them.
-  const trimForToday = g =>
-    g.league !== "WVB" || g.homeRank || g.awayRank || (g.verdict || 2) >= 3;
-  const restPool = visible.filter(g => g.dateKey === todayK && g !== hero && g.status !== "live" && trimForToday(g));
+  // Volleyball is already trimmed to televised-only where liveEvents is built
+  // (useLiveSchedule), so no extra filtering is needed here.
+  const restPool = visible.filter(g => g.dateKey === todayK && g !== hero && g.status !== "live");
   // "Notable" = curated highlights (real blurbs) or any high-importance game.
   // Everything else (filler live games, low-stakes) goes to the condensed,
   // expandable "every other game" section so every game is still accounted for.
