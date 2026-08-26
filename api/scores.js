@@ -54,7 +54,14 @@ export default async function handler(req, res) {
       for (const b of (comp.broadcasts || [])) { if (Array.isArray(b.names) && b.names[0]) { network = b.names[0]; break; } }
       // Rate the game from records / AP rank / spread / TV / stakes so the whole
       // slate gets a real verdict instead of a flat "good game" default.
-      const { verdict, reasons } = scoreCompetition(comp, ev, network, path);
+      // Never let a rating failure cost us the game itself: ESPN's shapes vary
+      // by league and a single bad record would otherwise blank the whole slate.
+      let verdict = 3, reasons = [];
+      try {
+        const scored = scoreCompetition(comp, ev, network, path);
+        verdict = scored.verdict;
+        reasons = scored.reasons;
+      } catch { /* fall back to a neutral verdict for this one game */ }
       const rankOf = c => {
         const r = c.curatedRank && c.curatedRank.current;
         return (typeof r === 'number' && r > 0 && r < 99) ? r : null;
