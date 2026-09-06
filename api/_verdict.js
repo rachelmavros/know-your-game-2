@@ -21,9 +21,49 @@ const MAJOR_CABLE = ['ESPN', 'ESPN2', 'TNT', 'TBS', 'FS1', 'USA', 'ION', 'NFLN',
 export function isNationalTv(network) {
   if (!network) return false;
   const n = String(network).toUpperCase().trim();
-  if (n.includes('+')) return false;               // ESPN+, SECN+, B1G+, MW+
+  // Streaming-only add-on tiers, not the actual channel: ESPN+, SECN+, B1G+,
+  // MW+, and ESPN's app-only "Unlmtd"/"Unlimited" simulcast feed — the latter
+  // would otherwise pass the ESPN startsWith check below.
+  if (n.includes('+') || n.includes('UNLMTD') || n.includes('UNLIMITED')) return false;
   if (BIG_FOUR.some(x => n === x || n.startsWith(x + ' '))) return true;
   return MAJOR_CABLE.some(x => n === x || n.startsWith(x + ' ') || n.endsWith(' ' + x));
+}
+
+// Tennis matches don't fit scoreCompetition() at all — there's no team
+// record/rank, no odds, and the "competition" shape is a single-elimination
+// round, not a competitor pair with a win percentage. Round importance
+// (Round 1 vs Final) plus how close the match actually was is the real signal
+// for whether a casual fan should care.
+const TENNIS_ROUND_BASE = {
+  'Final': 60, 'Semifinal': 48, 'Quarterfinal': 38,
+  'Round 4': 28, 'Round 3': 22, 'Round 2': 16, 'Round 1': 10,
+};
+export function scoreTennisMatch(roundName, network, competitors, maxSets) {
+  const base = TENNIS_ROUND_BASE[roundName] || 6;
+  const tv = isNationalTv(network) ? 20 : (network ? 6 : 0);
+  // Best-of-5 (men) routinely runs 3-4 sets even in a rout, so raw set COUNT
+  // is a weak signal — a 6-1 6-2 6-3 sweep still "goes 3 sets." Compare against
+  // the match's actual maximum (5 for men, 3 for women): only a genuine full
+  // decider — the last set actually being played — means it went the distance.
+  const sets = (competitors && competitors[0] && competitors[0].linescores) || [];
+  const wentTheDistance = maxSets && sets.length >= maxSets;
+  const decider = wentTheDistance ? 16 : 0;
+  const hadTiebreak = sets.some(s => s.tiebreak != null);
+  const score = Math.min(100, base + tv + decider + (hadTiebreak ? 8 : 0));
+
+  const reasons = [];
+  if (roundName === 'Final') reasons.push('The Final');
+  else if (roundName === 'Semifinal' || roundName === 'Quarterfinal') reasons.push(roundName);
+  if (decider >= 16) reasons.push('Went the distance');
+  if (hadTiebreak) reasons.push('Included a tiebreak');
+  if (isNationalTv(network)) reasons.push(`National TV${network ? ` (${network})` : ''}`);
+
+  let verdict;
+  if (score >= 62) verdict = 5;
+  else if (score >= 42) verdict = 4;
+  else if (score >= 22) verdict = 3;
+  else verdict = 2;
+  return { verdict, score, reasons };
 }
 
 function winPct(competitor) {

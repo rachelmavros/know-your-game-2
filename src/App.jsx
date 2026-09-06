@@ -371,6 +371,8 @@ function useLiveSchedule() {
         { lg: "EPL",  back: 3, fwd: 21, blurb: "Premier League",         atWord: "vs" },
         { lg: "CFB",  back: 2, fwd: 14, blurb: "College Football",       atWord: "at" },
         { lg: "WVB",  back: 2, fwd: 14, blurb: "College Volleyball",     atWord: "vs" },
+        { lg: "FIBA", back: 3, fwd: 14, blurb: "FIBA Women's World Cup", atWord: "vs" },
+        { lg: "USO",  back: 2, fwd: 14, blurb: "US Open",                atWord: "vs" },
       ];
       const [espnSets, wnbaScores, mlbScores] = await Promise.all([
         Promise.all(ESPN_LEAGUES.map(c => scoresFor(c.lg, addDays(today, -c.back), addDays(today, c.fwd)))),
@@ -388,10 +390,17 @@ function useLiveSchedule() {
           // streaming feed), keep only games on an actual TV network. This is
           // the one filter applied at the shared-data level (not just Today),
           // since even Calendar's day list doesn't have room for 200 rows.
-          if (cfg.lg === "WVB" && !g.isNationalTv) return;
+          // Both college volleyball (~200/day) and the US Open early rounds
+          // (~60/day) are far too many to list in full. Keep only nationally
+          // televised matches — applied at the shared-data level so both Today
+          // and Calendar stay readable.
+          if ((cfg.lg === "WVB" || cfg.lg === "USO") && !g.isNationalTv) return;
           // Rank prefix reads the way TV does: "#3 Ohio State".
           const withRank = (name, rank) => (rank ? `#${rank} ${name}` : name);
-          const label = `${withRank(g.away, g.awayRank)} ${cfg.atWord} ${withRank(g.home, g.homeRank)} · ${cfg.blurb}`;
+          // Tennis is player vs player in a named round, not a team matchup.
+          const label = cfg.lg === "USO"
+            ? `${g.away} vs ${g.home}${g.round ? ` · ${g.round}` : ""} · US Open`
+            : `${withRank(g.away, g.awayRank)} ${cfg.atWord} ${withRank(g.home, g.homeRank)} · ${cfg.blurb}`;
           (grouped[g.dateKey] = grouped[g.dateKey] || []).push({
             league: cfg.lg, dateKey: g.dateKey, home: g.home, away: g.away,
             homeAbbr: g.homeAbbr, awayAbbr: g.awayAbbr, time: g.time,
@@ -403,6 +412,7 @@ function useLiveSchedule() {
             score: g.homeScore != null ? { [g.homeAbbr]: g.homeScore, [g.awayAbbr]: g.awayScore } : null,
             channel: g.network || "", tagline: label,
             note: label, fromApi: true,
+            round: g.round || "", resultText: g.resultText || "", tour: g.tour || "",
           });
         }));
         // Overlay live scores + status onto WNBA/MLB games from BallDontLie.
@@ -487,10 +497,12 @@ const LEAGUE_COLORS = {
   EPL:  "#3D195B",   // Premier League purple
   CFB:  "#8C1D40",   // college football maroon
   WVB:  "#0F766E",   // women's college volleyball teal-green
+  FIBA: "#F77F00",   // FIBA orange
+  USO:  "#1B4D3E",   // US Open (tennis) hunter green
 };
-const LEAGUE_SPORT = { WNBA:"Basketball", NBA:"Basketball", MLB:"Baseball", NFL:"Football", NHL:"Hockey", MLS:"Soccer", WC:"Soccer · World Cup", EPL:"Soccer · Premier League", CFB:"Football · College", WVB:"Volleyball · College" };
+const LEAGUE_SPORT = { WNBA:"Basketball", NBA:"Basketball", MLB:"Baseball", NFL:"Football", NHL:"Hockey", MLS:"Soccer", WC:"Soccer · World Cup", EPL:"Soccer · Premier League", CFB:"Football · College", WVB:"Volleyball · College", FIBA:"Basketball · FIBA Women's World Cup", USO:"Tennis · US Open" };
 // Full names for headers/menus where the abbreviation alone isn't obvious.
-const LEAGUE_LABEL = { CFB: "College Football", WVB: "Women's College Volleyball" };
+const LEAGUE_LABEL = { CFB: "College Football", WVB: "Women's College Volleyball", FIBA: "FIBA Women's World Cup", USO: "US Open" };
 const leagueLabel = lg => LEAGUE_LABEL[lg] || lg;
 
 // The verdict scale. `bg`/`text` style the badge; `dot` is the swatch used in
@@ -821,7 +833,7 @@ function seasonStatus(league, todayK) {
 }
 
 // Sport emoji per league — used on headlines everywhere
-const SPORT_EMOJI = { WNBA: "🏀", NBA: "🏀", MLB: "⚾", NFL: "🏈", NHL: "🏒", MLS: "⚽", WC: "⚽", EPL: "⚽", CFB: "🏈", WVB: "🏐" };
+const SPORT_EMOJI = { WNBA: "🏀", NBA: "🏀", MLB: "⚾", NFL: "🏈", NHL: "🏒", MLS: "⚽", WC: "⚽", EPL: "⚽", CFB: "🏈", WVB: "🏐", FIBA: "🏀", USO: "🎾" };
 
 // Team color accents for logo badges (monogram discs). Keyed by full team name.
 const TEAM_COLORS = {
@@ -961,6 +973,16 @@ const STANDINGS = {
     emoji: "🏐", label: "Women's College Volleyball Top 25",
     blurb: "The weekly national poll of the 25 best college volleyball programs. The season builds to the NCAA Tournament and the Final Four in December.",
     cols: [], playoffCut: 0, isPoll: true,
+  },
+  USO: {
+    emoji: "🎾", label: "Tennis World Rankings",
+    blurb: "The official ATP (men) and WTA (women) singles rankings — the seeding behind the US Open draw. Players earn points at tournaments all year; the top names are the ones to watch.",
+    cols: [], playoffCut: 0, isPoll: true, isTennis: true,
+  },
+  FIBA: {
+    emoji: "🏀", label: "FIBA Women's World Cup",
+    blurb: "16 national teams in four groups of four. The top teams from each group advance to the knockout rounds. Ranked here by wins, then point differential.",
+    cols: ["W–L", "DIFF"], playoffCut: 0, isGroups: true,
   },
   EPL: {
     emoji: "⚽", label: "Premier League Table",
@@ -2068,7 +2090,7 @@ function CalendarTab({ alerts, onAlert }) {
       )}
       {/* Sport filter pills */}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, paddingBottom: 2 }}>
-        {["ALL", "WNBA", "NBA", "MLB", "CFB", "WVB", "NFL", "EPL", "NHL", "MLS"].map(lg => (
+        {["ALL", "WNBA", "NBA", "MLB", "CFB", "WVB", "FIBA", "USO", "NFL", "EPL", "NHL", "MLS"].map(lg => (
           <button key={lg} onClick={() => setCalFilters({ sport: lg, team: "ALL" })} style={{
             flexShrink: 0, padding: "6px 13px", borderRadius: 16, cursor: "pointer",
             background: calFilters.sport === lg ? (LEAGUE_COLORS[lg] || C.red) : C.surface,
@@ -3400,7 +3422,7 @@ const BIG_EVENTS = [
 ];
 
 function NewsTab() {
-  const leagues = ["WNBA", "NBA", "MLB", "NFL", "CFB", "WVB", "EPL", "NHL"];
+  const leagues = ["WNBA", "NBA", "MLB", "NFL", "CFB", "WVB", "FIBA", "USO", "EPL", "NHL"];
   const [league, setLeague] = useState("WNBA");
   const [articles, setArticles] = useState(null); // null = loading
   useEffect(() => {
@@ -3652,8 +3674,9 @@ function Chip({ bg, label, title }) {
 const STANDINGS_UPDATED = "July 15, 2026 · 9:00 AM CT";
 
 function StandingsTab() {
-  const leagues = ["WNBA", "NBA", "MLB", "NFL", "CFB", "WVB", "EPL", "MLS", "NHL"];
+  const leagues = ["WNBA", "NBA", "MLB", "NFL", "CFB", "WVB", "FIBA", "USO", "EPL", "MLS", "NHL"];
   const [view, setView] = useState("WNBA");
+  const [tennisTour, setTennisTour] = useState("atp"); // ATP (men) / WTA (women) sub-toggle for US Open rankings
   const lc = LEAGUE_COLORS[view];
 
   // Auto-refreshed WNBA + MLB standings (cached daily in Supabase; BallDontLie's
@@ -3682,7 +3705,11 @@ function StandingsTab() {
   const base = STANDINGS[view];
   // Live data is either a single ranked array (WNBA) or an object of
   // conference → ranked array (MLB=AL/NL, NBA=East/West, NFL=AFC/NFC).
-  const liveData = liveStandings && liveStandings[view.toLowerCase()];
+  // Tennis rankings live under separate atp/wta keys (not "uso"), selected by
+  // the ATP/WTA sub-toggle; everything else keys off the league name directly.
+  const liveData = liveStandings && (
+    view === "USO" ? liveStandings[tennisTour] : liveStandings[view.toLowerCase()]
+  );
   const liveIsTable = Array.isArray(liveData) && liveData.length > 0;
   const liveIsGrouped = liveData && !Array.isArray(liveData) && typeof liveData === "object" && Object.keys(liveData).length > 0;
   const hasLive = liveIsTable || liveIsGrouped;
@@ -3817,14 +3844,14 @@ function StandingsTab() {
 
   // AP-poll renderer for college (CFB / WVB): rank, movement since last week,
   // record, and first-place votes — the things the poll is actually about.
-  const renderPoll = (rows, cut, footNote) => (
+  const renderPoll = (rows, cut, footNote, isTennis) => (
     <>
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
         <div style={{ display: "flex", padding: "8px 14px", background: lc, fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", color: "#fff" }}>
           <span style={{ width: 28 }}>#</span>
-          <span style={{ flex: 1 }}>TEAM</span>
+          <span style={{ flex: 1 }}>{isTennis ? "PLAYER" : "TEAM"}</span>
           <span style={{ width: 44, textAlign: "right" }}>MOVE</span>
-          <span style={{ width: 56, textAlign: "right" }}>RECORD</span>
+          <span style={{ width: 62, textAlign: "right" }}>{isTennis ? "POINTS" : "RECORD"}</span>
         </div>
         {rows.map((t, i) => {
           const inCut = cut > 0 && t.rank <= cut;
@@ -3842,7 +3869,10 @@ function StandingsTab() {
               }}>
                 <span style={{ width: 28, fontSize: 14, fontWeight: 900, color: inCut ? lc : C.inkFaint }}>{t.rank}</span>
                 <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-                  <TeamLogo team={t.team} size={22} />
+                  {isTennis
+                    ? <Headshot src={t.logo} name={t.team} size={26} lc={lc} />
+                    : <TeamLogo team={t.team} size={22} />}
+                  {isTennis && t.flag && <img src={t.flag} alt="" width={18} height={12} style={{ objectFit: "cover", borderRadius: 2, flexShrink: 0 }} />}
                   <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.team}</span>
                   {t.firstPlaceVotes > 0 && (
                     <span title={`${t.firstPlaceVotes} first-place votes`} style={{ fontSize: 9, fontWeight: 800, color: lc, border: `1px solid ${lc}55`, borderRadius: 3, padding: "1px 4px", flexShrink: 0 }}>
@@ -3853,7 +3883,9 @@ function StandingsTab() {
                 <span style={{ width: 44, textAlign: "right", fontSize: 12, fontWeight: 800, color: up ? "#1F7A4D" : down ? "#C0392B" : C.inkFaint }}>
                   {up ? `▲${mv.slice(1)}` : down ? `▼${mv.slice(1)}` : "–"}
                 </span>
-                <span style={{ width: 56, textAlign: "right", fontSize: 12.5, fontWeight: 700, color: C.inkMid }}>{t.record || "—"}</span>
+                <span style={{ width: 62, textAlign: "right", fontSize: 12.5, fontWeight: 700, color: C.inkMid }}>
+                  {isTennis ? (t.points != null ? Number(t.points).toLocaleString() : "—") : (t.record || "—")}
+                </span>
               </div>
               {isCut && (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 14px", background: C.bg }}>
@@ -3878,6 +3910,44 @@ function StandingsTab() {
           <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", color: lc, marginBottom: 8 }}>{CONF_LABEL[k] || k}</div>
           {/* Each conference races for its own set of playoff spots. */}
           {renderTable(obj[k], cut, cols, null, computeRace(obj[k], cut))}
+        </div>
+      ) : null))}
+    </>
+  );
+
+  // FIBA Women's World Cup: four groups (A/B/C/D) of national teams, each a
+  // small W-L table with point differential. The top finishers advance, but
+  // the exact number varies by round format, so we don't draw a cut line.
+  const renderGroups = (obj) => (
+    <>
+      {Object.keys(obj).sort().map(g => (obj[g] && obj[g].length ? (
+        <div key={g} style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", color: lc, marginBottom: 8 }}>GROUP {g}</div>
+          <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
+            <div style={{ display: "flex", padding: "8px 14px", background: lc, fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", color: "#fff" }}>
+              <span style={{ width: 28 }}>#</span>
+              <span style={{ flex: 1 }}>TEAM</span>
+              <span style={{ width: 56, textAlign: "right" }}>W–L</span>
+              <span style={{ width: 56, textAlign: "right" }}>DIFF</span>
+            </div>
+            {obj[g].map((t, i) => (
+              <div key={t.team} style={{
+                display: "flex", alignItems: "center", padding: "11px 14px",
+                background: i < 2 ? lc + "10" : C.surface,
+                borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}`,
+              }}>
+                <span style={{ width: 28, fontSize: 14, fontWeight: 900, color: i < 2 ? lc : C.inkFaint }}>{t.rank}</span>
+                <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+                  <TeamLogo team={t.team} size={22} />
+                  <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.team}</span>
+                </span>
+                <span style={{ width: 56, textAlign: "right", fontSize: 13, fontWeight: 700, color: C.inkMid }}>{t.w}–{t.l}</span>
+                <span style={{ width: 56, textAlign: "right", fontSize: 12.5, fontWeight: 700, color: t.diff > 0 ? "#1F7A4D" : t.diff < 0 ? "#C0392B" : C.inkMid }}>
+                  {t.diff > 0 ? `+${t.diff}` : t.diff}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null))}
     </>
@@ -4016,8 +4086,30 @@ function StandingsTab() {
         );
       })()}
 
-      {/* Standings tables — grouped (MLB/NBA/NFL), single (WNBA live), or curated */}
-      {liveIsGrouped ? (
+      {/* Tennis ATP/WTA sub-toggle — the US Open "standings" is two rankings. */}
+      {view === "USO" && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {[["atp", "Men (ATP)"], ["wta", "Women (WTA)"]].map(([id, lbl]) => (
+            <button key={id} onClick={() => setTennisTour(id)} style={{
+              flex: 1, padding: "9px 12px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit",
+              fontSize: 13, fontWeight: 800,
+              background: tennisTour === id ? lc : C.surface,
+              color: tennisTour === id ? "#fff" : C.inkDim,
+              border: `1px solid ${tennisTour === id ? lc : C.line}`,
+            }}>{lbl}</button>
+          ))}
+        </div>
+      )}
+
+      {/* Standings tables — grouped (MLB/NBA/NFL/FIBA), single (WNBA live), or curated */}
+      {(liveIsGrouped && view === "FIBA") ? (
+        <>
+          {renderGroups(liveData)}
+          <div style={{ fontSize: 12, color: C.inkFaint, marginTop: 2, lineHeight: 1.5 }}>
+            Four groups of four. The top teams from each group advance to the knockout rounds. DIFF = total points scored minus points allowed.
+          </div>
+        </>
+      ) : liveIsGrouped ? (
         <>
           {renderGrouped(liveData, PLAYOFF_CUT[view] || 0, ["W–L", "GB"])}
           <div style={{ fontSize: 12, color: C.inkFaint, marginTop: 2, lineHeight: 1.5 }}>
@@ -4032,18 +4124,27 @@ function StandingsTab() {
         renderPoll(liveData, s.playoffCut,
           view === "CFB"
             ? "Voted on weekly by sportswriters. ▲▼ shows movement since last week. The top 12 make the College Football Playoff."
-            : "Voted on weekly by coaches and writers. ▲▼ shows movement since last week. The top teams host NCAA Tournament matches in December.")
+            : view === "WVB"
+              ? "Voted on weekly by coaches and writers. ▲▼ shows movement since last week. The top teams host NCAA Tournament matches in December."
+              : "Official world ranking based on points earned at tournaments over the past year. ▲▼ shows movement since the last update.",
+          s.isTennis)
       ) : liveIsTable ? (
         renderTable(liveData, PLAYOFF_CUT[view] || 0,
           view === "EPL" ? ["PTS", "PLAYED"] : ["W–L", "GB"],
           view === "WNBA" ? "Green = currently in the playoffs. GB = games behind the leader. The tag next to each team shows how many more wins would guarantee a playoff spot — tap and hold for detail."
             : view === "EPL" ? "Ranked by points (3 for a win, 1 for a draw). The top clubs qualify for the Champions League." : null,
           computeRace(liveData, PLAYOFF_CUT[view] || 0))
-      ) : s.isPoll ? (
+      ) : (s.isPoll || s.isGroups) ? (
         <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "22px 20px" }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 6 }}>Poll not out yet</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 6 }}>
+            {s.isGroups ? "Tournament hasn't started yet" : s.isTennis ? "Rankings loading" : "Poll not out yet"}
+          </div>
           <div style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.6 }}>
-            The {s.label.replace(/^.*?(AP )?Top 25$/, "Top 25")} refreshes once a week during the season. Check back after this week's games.
+            {s.isGroups
+              ? "The FIBA Women's World Cup group standings appear here once the tournament is underway (September 4–14)."
+              : s.isTennis
+                ? "The latest ATP and WTA world rankings load here. Check back shortly."
+                : "This poll refreshes once a week during the season. Check back after this week's games."}
           </div>
         </div>
       ) : (
