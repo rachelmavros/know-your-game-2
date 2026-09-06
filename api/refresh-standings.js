@@ -161,6 +161,79 @@ async function buildRankings(path) {
   }).filter(x => x.rank && x.team);
 }
 
+// ATP/WTA world rankings (player-based, not a team poll — but rendered the
+// same way as the AP Top 25 in the UI, so shaped to match `buildRankings`'s
+// output). Top 25 only; ESPN returns ~150.
+async function buildTennisRankings(tour) {
+  const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/tennis/${tour}/rankings`);
+  if (!r.ok) return [];
+  const j = await r.json();
+  const list = (j.rankings && j.rankings[0] && j.rankings[0].ranks) || [];
+  return list.slice(0, 25).map(e => {
+    const a = e.athlete || {};
+    return {
+      rank: e.current,
+      team: a.displayName || '',                 // "team" so the UI's shared poll renderer just works
+      abbr: '',
+      logo: a.headshot || '',
+      flag: a.flag || '',
+      record: '',
+      points: e.points || null,
+      trend: e.previous && e.current && e.previous !== e.current
+        ? (e.previous > e.current ? `+${e.previous - e.current}` : `-${e.current - e.previous}`)
+        : '',
+      firstPlaceVotes: 0,
+      poll: tour.toUpperCase(),
+    };
+  }).filter(x => x.rank && x.team);
+}
+
+// FIBA Women's World Cup: a 2-week group-stage tournament, not a season — ESPN
+// has no standings feed for it, so we compute Group A/B/C/D tables ourselves
+// from completed match results across the tournament's fixed date window.
+// (Group letter only exists as free text in each game's `notes` headline.)
+const FIBA_WC_WINDOW = { start: '20260904', end: '20260914' };
+async function buildFibaGroups() {
+  const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/fiba/scoreboard?dates=${FIBA_WC_WINDOW.start}-${FIBA_WC_WINDOW.end}&limit=200`);
+  if (!r.ok) return {};
+  const j = await r.json();
+  const table = {}; // group letter -> { teamName -> row }
+  for (const ev of (j.events || [])) {
+    const comp = (ev.competitions || [])[0];
+    if (!comp) continue;
+    const note = ((comp.notes || [])[0] || {}).headline || '';
+    const m = note.match(/Group ([A-Z])/);
+    if (!m) continue;
+    const grp = m[1];
+    const cs = comp.competitors || [];
+    if (cs.length < 2) continue;
+    table[grp] = table[grp] || {};
+    const final = comp.status && comp.status.type && comp.status.type.completed;
+    for (const c of cs) {
+      const name = c.team && (c.team.displayName || c.team.name);
+      if (!name) continue;
+      const logo = (c.team.logos && c.team.logos[0] && c.team.logos[0].href) || '';
+      const row = table[grp][name] || { team: name, logo, w: 0, l: 0, pf: 0, pa: 0, played: 0 };
+      row.logo = row.logo || logo;
+      if (final) {
+        const own = Number(c.score) || 0;
+        const opp = Number((cs.find(x => x !== c) || {}).score) || 0;
+        row.played += 1;
+        row.pf += own; row.pa += opp;
+        if (c.winner) row.w += 1; else row.l += 1;
+      }
+      table[grp][name] = row;
+    }
+  }
+  const out = {};
+  for (const [grp, teams] of Object.entries(table)) {
+    out[grp] = Object.values(teams)
+      .sort((a, b) => b.w - a.w || (b.pf - b.pa) - (a.pf - a.pa))
+      .map((t, i) => ({ rank: i + 1, team: t.team, logo: t.logo, w: t.w, l: t.l, diff: t.pf - t.pa, played: t.played }));
+  }
+  return out;
+}
+
 export default async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) {
@@ -183,17 +256,24 @@ export default async function handler(req, res) {
   await tryBuild('epl', buildEpl);
   await tryBuild('cfb', () => buildRankings('football/college-football'));
   await tryBuild('wvb', () => buildRankings('volleyball/womens-college-volleyball'));
+  await tryBuild('atp', () => buildTennisRankings('atp'));
+  await tryBuild('wta', () => buildTennisRankings('wta'));
+  await tryBuild('fiba', buildFibaGroups);
 
   counts.wnba = (value.wnba || []).length;
   counts.epl = (value.epl || []).length;
   counts.cfb = (value.cfb || []).length;
   counts.wvb = (value.wvb || []).length;
+  counts.atp = (value.atp || []).length;
+  counts.wta = (value.wta || []).length;
+  counts.fiba = value.fiba ? Object.fromEntries(Object.entries(value.fiba).map(([g, r]) => [g, r.length])) : null;
   for (const k of ['mlb', 'nba', 'nfl']) counts[k] = value[k] ? Object.fromEntries(Object.entries(value[k]).map(([c, r]) => [c, r.length])) : null;
 
   if (debug) return res.status(200).json({ ok: true, debug: true, counts, value });
 
   const anything = (value.wnba || []).length || value.mlb || value.nba || value.nfl
-    || (value.epl || []).length || (value.cfb || []).length || (value.wvb || []).length;
+    || (value.epl || []).length || (value.cfb || []).length || (value.wvb || []).length
+    || (value.atp || []).length || (value.wta || []).length || (value.fiba && Object.keys(value.fiba).length);
   if (!anything) return res.status(200).json({ ok: false, error: 'No standings parsed', counts });
 
   const up = await fetch(`${supabaseUrl}/rest/v1/app_cache?on_conflict=key`, {
