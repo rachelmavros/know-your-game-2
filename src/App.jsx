@@ -50,6 +50,16 @@ function epochDay(dateKey) {
   return Math.floor(Date.UTC(y, m - 1, d) / 86400000);
 }
 
+// "Today" / "Tomorrow" / "Sat, Sep 6" — friendly relative day label for a dateKey.
+function fmtDayLabel(dateKey) {
+  try {
+    const diff = epochDay(dateKey) - epochDay(todayKey());
+    if (diff === 0) return "Today";
+    if (diff === 1) return "Tomorrow";
+    return new Date(dateKey + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  } catch { return ""; }
+}
+
 function monthName(dateKey) {
   const [y, m] = dateKey.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "long" });
@@ -793,6 +803,27 @@ const SEASON_CONTEXT = {
       { date: "2027-02-14", label: "All-Star Weekend", when: "Mid-February" },
       { date: "2027-04-17", label: "Playoffs begin", when: "Mid-April", phase: "Playoffs" },
       { date: "2027-06-03", label: "NBA Finals", when: "June", phase: "Finals" },
+    ],
+  },
+  FIBA: {
+    start: "2026-09-04", detail: "The FIBA Women's World Cup is on now — a short, two-week tournament where 16 countries compete for the title. It runs September 4–14 in Berlin.",
+    milestones: [
+      { date: "2026-09-04", label: "Group stage", when: "Sept 4", phase: "Group stage" },
+      { date: "2026-09-11", label: "Quarterfinals", when: "Sept 11", phase: "Knockout rounds" },
+      { date: "2026-09-13", label: "Semifinals", when: "Sept 13", phase: "Semifinals" },
+      { date: "2026-09-14", label: "Final & medal games", when: "Sept 14", phase: "Final" },
+    ],
+  },
+  USO: {
+    // Tennis has four majors a year; this timeline frames the US Open within
+    // the season for a fan who doesn't know how the sport is structured.
+    start: "2026-08-24", detail: "The US Open is the year's final Grand Slam — the four biggest tournaments in tennis. It's a two-week, single-elimination bracket in New York: lose once and you're out.",
+    milestones: [
+      { date: "2026-08-24", label: "First rounds", when: "Aug 24", phase: "Early rounds" },
+      { date: "2026-09-02", label: "Quarterfinals", when: "Sept 2", phase: "Quarterfinals" },
+      { date: "2026-09-04", label: "Semifinals", when: "Sept 4", phase: "Semifinals" },
+      { date: "2026-09-06", label: "Women's final", when: "Sept 6", phase: "Finals weekend" },
+      { date: "2026-09-07", label: "Men's final", when: "Sept 7", phase: "Finals weekend" },
     ],
   },
 };
@@ -3118,6 +3149,34 @@ Question: ${q}`;
 
 const SPORT_101 = [
   {
+    league: "USO",
+    headline: "Tennis & the US Open — one of the four majors",
+    season: "Late Aug → early Sept · two weeks",
+    progress: "Grand Slam in progress",
+    sections: [
+      { h: "What a Grand Slam is", b: "Tennis has four huge tournaments each year — the Australian Open, French Open, Wimbledon, and the US Open — called the 'Grand Slams' or 'majors.' They're the biggest stage in the sport, and winning one defines a career. The US Open is the last one of the year, played in New York in late summer." },
+      { h: "How the tournament works", b: "It's a single-elimination bracket: 128 players start, lose once and you're out. Win and you advance to the next round. It goes Round 1 → Round 2 → Round 3 → Round 4 → Quarterfinals (8 left) → Semifinals (4 left) → the Final (last 2). Men and women each have their own separate draw and champion." },
+      { h: "How a match is scored (the part that confuses everyone)", b: "Three layers stack up. You win POINTS to win a GAME, win games to win a SET, and win sets to win the MATCH. Game scoring is the quirky one — it goes 15, 30, 40, then game (and '40–40' is called 'deuce,' where you must win two points in a row). Win 6 games (by two) to take a set." },
+      { h: "Best-of-3 vs best-of-5", b: "Women play best-of-3 sets (first to win 2 sets wins). Men play best-of-5 (first to 3) — which is why men's matches can run four or five hours. A close five-setter is the most dramatic thing in tennis." },
+      { h: "'Seeds' and rankings", b: "Players carry a world ranking (No. 1, No. 2, and so on) based on results over the past year. The tournament uses those rankings to 'seed' the bracket — spreading the best players apart so they don't meet until late rounds. A low-ranked player beating a top seed early is a classic upset." },
+      { h: "Why casual fans love it", b: "It's one-on-one with nowhere to hide — pure individual drama, no team to bail anyone out. Stars like Carlos Alcaraz, Jannik Sinner, Coco Gauff, and Aryna Sabalenka bring huge personalities. The US Open plays late into the night under lights in front of loud New York crowds, on ESPN and ABC." },
+    ],
+  },
+  {
+    league: "FIBA",
+    headline: "FIBA Women's World Cup — countries, not clubs",
+    season: "Sept 4–14 · two weeks",
+    progress: "Tournament in progress",
+    sections: [
+      { h: "What this is", b: "It's the world championship of women's basketball, played between national teams (USA, Australia, France, Spain, and so on) rather than pro clubs. 'FIBA' is just the sport's international governing body — think of it like the World Cup, but for basketball, held every four years." },
+      { h: "How the group stage works", b: "16 countries are split into four groups of four (Groups A, B, C, D). Within each group, every team plays the other three once. Win-loss records sort each group, and the top teams from each group advance to the knockout rounds. Teams at the bottom are eliminated." },
+      { h: "Why point differential matters", b: "When teams finish with the same record, the tiebreaker is often 'point differential' — how much you won or lost your games by, added up. That's why a team might keep pushing even in a lopsided win: the margin can decide who advances." },
+      { h: "The knockout rounds", b: "Once groups finish, it becomes single-elimination: Quarterfinals → Semifinals → the Final. Lose once and you're done. There's also a bronze-medal game between the two semifinal losers, so three teams go home with medals (gold, silver, bronze)." },
+      { h: "How it differs from the WNBA", b: "Same sport, different flavor. International rules have a slightly shorter three-point line and 40-minute games (vs the WNBA's 40 too, but quarters differ slightly). Many of the same stars you see in the WNBA play for their home countries here — so it's a chance to see them in a different jersey." },
+      { h: "Why casual fans love it", b: "National pride turns it into an event — flags, anthems, and the USA women's team carrying one of the longest winning streaks in all of sports. It's a rare, concentrated two weeks where every game means something." },
+    ],
+  },
+  {
     league: "CFB",
     headline: "College football — the sport that runs on rankings",
     season: "Late Aug → January · ~12 games each",
@@ -3702,6 +3761,30 @@ function StandingsTab() {
     return () => { cancelled = true; };
   }, []);
 
+  // For the tournament sports (FIBA / US Open), rankings alone don't answer the
+  // question a new fan actually has — "when do they play next?" So when one of
+  // those tabs is open, pull the next few televised games and show them below
+  // the table. Only fetched for these two leagues, and only on demand.
+  const [upcoming, setUpcoming] = useState([]);
+  useEffect(() => {
+    if (view !== "FIBA" && view !== "USO") { setUpcoming([]); return; }
+    let cancelled = false;
+    const today = todayKey();
+    fetch(`/api/scores?league=${view}&start=${today}&end=${addDays(today, 10)}`)
+      .then(r => r.json())
+      .then(j => {
+        if (cancelled) return;
+        const games = (j.games || [])
+          .filter(g => g.state !== "post")                 // still to come or live
+          .filter(g => view !== "USO" || g.isNationalTv)    // US Open: televised only (huge draw)
+          .sort((a, b) => (a.dateKey + a.time).localeCompare(b.dateKey + b.time))
+          .slice(0, 6);
+        setUpcoming(games);
+      })
+      .catch(() => { if (!cancelled) setUpcoming([]); });
+    return () => { cancelled = true; };
+  }, [view]);
+
   const base = STANDINGS[view];
   // Live data is either a single ranked array (WNBA) or an object of
   // conference → ranked array (MLB=AL/NL, NBA=East/West, NFL=AFC/NFC).
@@ -4018,6 +4101,34 @@ function StandingsTab() {
           </div>
         );
       })()}
+
+      {/* Upcoming matches — for tournament sports, "when do they play next?" is
+          the real question rankings can't answer. */}
+      {(view === "FIBA" || view === "USO") && upcoming.length > 0 && (
+        <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px", marginBottom: 18 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>
+            {view === "USO" ? "NEXT ON TV" : "UPCOMING GAMES"}
+          </div>
+          {upcoming.map((g, i) => {
+            const isLive = g.state === "in";
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}` }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {g.away} <span style={{ color: C.inkFaint, fontWeight: 400 }}>vs</span> {g.home}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.inkFaint }}>
+                    {fmtDayLabel(g.dateKey)} · {g.time}{g.round ? ` · ${g.round}` : ""}{g.network ? ` · ${g.network}` : ""}
+                  </div>
+                </div>
+                {isLive
+                  ? <span style={{ fontSize: 9, fontWeight: 800, color: "#fff", background: C.red, borderRadius: 3, padding: "2px 6px", flexShrink: 0 }}>LIVE</span>
+                  : <VerdictDot level={g.verdict} />}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* NBA: last season's championship bracket — only when we have no live standings */}
       {view === "NBA" && !hasLive && (
