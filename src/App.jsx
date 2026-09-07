@@ -512,7 +512,12 @@ const LEAGUE_COLORS = {
 };
 const LEAGUE_SPORT = { WNBA:"Basketball", NBA:"Basketball", MLB:"Baseball", NFL:"Football", NHL:"Hockey", MLS:"Soccer", WC:"Soccer · World Cup", EPL:"Soccer · Premier League", CFB:"Football · College", WVB:"Volleyball · College", FIBA:"Basketball · FIBA Women's World Cup", USO:"Tennis · US Open" };
 // Full names for headers/menus where the abbreviation alone isn't obvious.
-const LEAGUE_LABEL = { CFB: "College Football", WVB: "Women's College Volleyball", FIBA: "FIBA Women's World Cup", USO: "US Open" };
+// Full names for anywhere the bare acronym isn't obvious to a non-fan (used on
+// pill/tab labels). WNBA/NBA/MLB/NFL/NHL/EPL/MLS are common enough to leave as
+// acronyms; kept short enough to fit a scrollable pill, with the fuller
+// "Women's College Volleyball" / "FIBA Women's World Cup" spelled out wherever
+// there's room (Standings header, Sports 101, blurbs).
+const LEAGUE_LABEL = { CFB: "College Football", WVB: "College Volleyball", FIBA: "Women's World Cup", USO: "US Open" };
 const leagueLabel = lg => LEAGUE_LABEL[lg] || lg;
 
 // The verdict scale. `bg`/`text` style the badge; `dot` is the swatch used in
@@ -817,13 +822,16 @@ const SEASON_CONTEXT = {
   USO: {
     // Tennis has four majors a year; this timeline frames the US Open within
     // the season for a fan who doesn't know how the sport is structured.
-    start: "2026-08-24", detail: "The US Open is the year's final Grand Slam — the four biggest tournaments in tennis. It's a two-week, single-elimination bracket in New York: lose once and you're out.",
+    // Dates verified directly against ESPN's actual round-by-round schedule
+    // (not estimated) — a prior guess had the finals a full week too early.
+    start: "2026-08-23", detail: "The US Open is the year's final Grand Slam — the four biggest tournaments in tennis. It's a two-week, single-elimination bracket in New York: lose once and you're out.",
     milestones: [
-      { date: "2026-08-24", label: "First rounds", when: "Aug 24", phase: "Early rounds" },
-      { date: "2026-09-02", label: "Quarterfinals", when: "Sept 2", phase: "Quarterfinals" },
-      { date: "2026-09-04", label: "Semifinals", when: "Sept 4", phase: "Semifinals" },
-      { date: "2026-09-06", label: "Women's final", when: "Sept 6", phase: "Finals weekend" },
-      { date: "2026-09-07", label: "Men's final", when: "Sept 7", phase: "Finals weekend" },
+      { date: "2026-08-23", label: "First rounds", when: "Aug 23", phase: "Early rounds" },
+      { date: "2026-09-07", label: "Quarterfinals", when: "Sept 7–8", phase: "Quarterfinals" },
+      { date: "2026-09-09", label: "Women's semifinal", when: "Sept 9", phase: "Semifinals" },
+      { date: "2026-09-10", label: "Men's semifinal", when: "Sept 10", phase: "Semifinals" },
+      { date: "2026-09-12", label: "Women's final", when: "Sept 12", phase: "Finals weekend" },
+      { date: "2026-09-13", label: "Men's final", when: "Sept 13", phase: "Finals weekend" },
     ],
   },
 };
@@ -1761,7 +1769,7 @@ function ExpandableOtherGame({ game, alertOn, onAlert, first }) {
       borderTop: topBorder, cursor: "pointer",
     }}>
       <VerdictDot level={game.verdict} />
-      <span style={{ fontSize: 8, fontWeight: 800, color: "#fff", background: LEAGUE_COLORS[game.league], borderRadius: 3, padding: "2px 5px", flexShrink: 0 }}>{game.league}</span>
+      <span style={{ fontSize: 8, fontWeight: 800, color: "#fff", background: LEAGUE_COLORS[game.league], borderRadius: 3, padding: "2px 5px", flexShrink: 0, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{leagueLabel(game.league)}</span>
       <TeamLogo team={game.away} size={18} />
       <span style={{ fontSize: 13, color: C.inkMid, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {game.away} {game.atWord || "at"} {game.home}
@@ -2046,7 +2054,7 @@ function ExpandableCalGame({ e, aid, alerts, onAlert, first }) {
       display: "flex", alignItems: "center", gap: 10, padding: "11px 14px",
       borderTop: topBorder, cursor: "pointer",
     }}>
-      <span style={{ fontSize: 8, fontWeight: 800, color: "#fff", background: LEAGUE_COLORS[e.league], borderRadius: 3, padding: "2px 5px", flexShrink: 0 }}>{e.league}</span>
+      <span style={{ fontSize: 8, fontWeight: 800, color: "#fff", background: LEAGUE_COLORS[e.league], borderRadius: 3, padding: "2px 5px", flexShrink: 0, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{leagueLabel(e.league)}</span>
       {e.away && <TeamLogo team={e.away} size={18} />}
       <span style={{ fontSize: 13, color: C.inkMid, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {label}
@@ -2128,7 +2136,7 @@ function CalendarTab({ alerts, onAlert }) {
             color: calFilters.sport === lg ? "#fff" : C.inkDim, fontSize: 12, fontWeight: 700,
             border: `1px solid ${calFilters.sport === lg ? (LEAGUE_COLORS[lg] || C.red) : C.line}`,
             fontFamily: "inherit",
-          }}>{lg === "ALL" ? "All Sports" : `${SPORT_EMOJI[lg]} ${lg}`}</button>
+          }}>{lg === "ALL" ? "All Sports" : `${SPORT_EMOJI[lg]} ${leagueLabel(lg)}`}</button>
         ))}
       </div>
 
@@ -3524,7 +3532,7 @@ function NewsTab() {
             background: league === lg ? LEAGUE_COLORS[lg] : C.surface,
             color: league === lg ? "#fff" : C.inkDim, fontSize: 13, fontWeight: 700, fontFamily: "inherit",
             border: `1px solid ${league === lg ? LEAGUE_COLORS[lg] : C.line}`,
-          }}>{SPORT_EMOJI[lg]} {lg}</button>
+          }}>{SPORT_EMOJI[lg]} {leagueLabel(lg)}</button>
         ))}
       </div>
 
@@ -3763,27 +3771,38 @@ function StandingsTab() {
 
   // For the tournament sports (FIBA / US Open), rankings alone don't answer the
   // question a new fan actually has — "when do they play next?" So when one of
-  // those tabs is open, pull the next few televised games and show them below
-  // the table. Only fetched for these two leagues, and only on demand.
+  // those tabs is open, pull upcoming televised games and show them below the
+  // table, paged (6 at a time) with Prev/Next. Only fetched for these leagues.
   const [upcoming, setUpcoming] = useState([]);
+  const [upcomingPage, setUpcomingPage] = useState(0);
+  const PAGE_SIZE = 6;
   useEffect(() => {
     if (view !== "FIBA" && view !== "USO") { setUpcoming([]); return; }
     let cancelled = false;
+    setUpcomingPage(0);
     const today = todayKey();
-    fetch(`/api/scores?league=${view}&start=${today}&end=${addDays(today, 10)}`)
+    fetch(`/api/scores?league=${view}&start=${today}&end=${addDays(today, 14)}`)
       .then(r => r.json())
       .then(j => {
         if (cancelled) return;
         const games = (j.games || [])
           .filter(g => g.state !== "post")                 // still to come or live
           .filter(g => view !== "USO" || g.isNationalTv)    // US Open: televised only (huge draw)
-          .sort((a, b) => (a.dateKey + a.time).localeCompare(b.dateKey + b.time))
-          .slice(0, 6);
+          .sort((a, b) => (a.dateKey + a.time).localeCompare(b.dateKey + b.time));
         setUpcoming(games);
       })
       .catch(() => { if (!cancelled) setUpcoming([]); });
     return () => { cancelled = true; };
   }, [view]);
+
+  // On the US Open, "upcoming" should follow whichever tour (Men/Women) is
+  // selected above — clicking the ATP/WTA toggle should re-scope this list too.
+  const upcomingFiltered = view === "USO"
+    ? upcoming.filter(g => (g.tour || "").toLowerCase() === tennisTour)
+    : upcoming;
+  useEffect(() => { setUpcomingPage(0); }, [tennisTour]);
+  const upcomingPageCount = Math.max(1, Math.ceil(upcomingFiltered.length / PAGE_SIZE));
+  const upcomingShown = upcomingFiltered.slice(upcomingPage * PAGE_SIZE, upcomingPage * PAGE_SIZE + PAGE_SIZE);
 
   const base = STANDINGS[view];
   // Live data is either a single ranked array (WNBA) or an object of
@@ -4049,7 +4068,7 @@ function StandingsTab() {
             border: `1px solid ${view === lg ? LEAGUE_COLORS[lg] : C.line}`,
             boxShadow: view === lg ? `0 2px 8px ${LEAGUE_COLORS[lg]}44` : "none",
           }}>
-            {SPORT_EMOJI[lg]} {lg}
+            {SPORT_EMOJI[lg]} {leagueLabel(lg)}
           </button>
         ))}
       </div>
@@ -4103,13 +4122,29 @@ function StandingsTab() {
       })()}
 
       {/* Upcoming matches — for tournament sports, "when do they play next?" is
-          the real question rankings can't answer. */}
-      {(view === "FIBA" || view === "USO") && upcoming.length > 0 && (
+          the real question rankings can't answer. Paged, and on the US Open it
+          follows whichever tour (Men/Women) is selected above. */}
+      {(view === "FIBA" || view === "USO") && upcomingFiltered.length > 0 && (
         <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px", marginBottom: 18 }}>
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>
-            {view === "USO" ? "NEXT ON TV" : "UPCOMING GAMES"}
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint }}>
+              {view === "USO" ? "NEXT ON TV" : "UPCOMING GAMES"}
+            </div>
+            {upcomingPageCount > 1 && (
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 10.5, color: C.inkFaint, fontWeight: 700 }}>{upcomingPage + 1} / {upcomingPageCount}</span>
+                <button onClick={() => setUpcomingPage(p => Math.max(0, p - 1))} disabled={upcomingPage === 0} style={{
+                  width: 22, height: 22, borderRadius: 6, border: `1px solid ${C.line}`, background: C.bg, fontFamily: "inherit",
+                  color: upcomingPage === 0 ? C.line : C.inkDim, cursor: upcomingPage === 0 ? "default" : "pointer", fontSize: 12, lineHeight: "20px", padding: 0,
+                }}>‹</button>
+                <button onClick={() => setUpcomingPage(p => Math.min(upcomingPageCount - 1, p + 1))} disabled={upcomingPage >= upcomingPageCount - 1} style={{
+                  width: 22, height: 22, borderRadius: 6, border: `1px solid ${C.line}`, background: C.bg, fontFamily: "inherit",
+                  color: upcomingPage >= upcomingPageCount - 1 ? C.line : C.inkDim, cursor: upcomingPage >= upcomingPageCount - 1 ? "default" : "pointer", fontSize: 12, lineHeight: "20px", padding: 0,
+                }}>›</button>
+              </div>
+            )}
           </div>
-          {upcoming.map((g, i) => {
+          {upcomingShown.map((g, i) => {
             const isLive = g.state === "in";
             return (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderTop: i === 0 ? "none" : `1px solid ${C.lineSoft}` }}>
@@ -4784,7 +4819,7 @@ function PlayersTab({ target }) {
             }}>
               <span style={{ fontSize: 22 }}>{SPORT_EMOJI[lg]}</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 15, fontWeight: 900, color: isOpen ? "#fff" : C.ink, letterSpacing: "0.02em" }}>{lg}</div>
+                <div style={{ fontSize: 15, fontWeight: 900, color: isOpen ? "#fff" : C.ink, letterSpacing: "0.02em" }}>{leagueLabel(lg)}</div>
                 <div style={{ fontSize: 11, color: isOpen ? "rgba(255,255,255,0.75)" : C.inkFaint, fontWeight: 600 }}>
                   {LEAGUE_SPORT[lg]}
                   {(() => { const fp = data.stars.length || (leagueStars[lg] ? leagueStars[lg].length : 0); return fp ? ` · ${fp} featured players` : ""; })()}
