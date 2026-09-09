@@ -1881,13 +1881,11 @@ function HeroCard({ game, alertOn, onAlert }) {
           </span>
         </div>
         <div style={{ marginBottom: 10 }}><VerdictLine level={game.verdict} why={game.verdictWhy} /></div>
-        {/* Tagline and summary say the same thing for API-sourced games —
-            show one line about the matchup, never the same text twice. */}
-        {game.summary && game.summary.trim() !== (game.tagline || "").trim() ? (
-          <p style={{ fontSize: 14, color: C.inkMid, lineHeight: 1.6, margin: "0 0 14px", maxWidth: 500 }}>{game.summary}</p>
-        ) : game.tagline ? (
-          <div style={{ fontSize: 14, color: lc, fontWeight: 700, marginBottom: 14 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>
-        ) : null}
+        {(() => {
+          const blurb = gameBlurb(game);
+          if (!blurb) return null;
+          return <p style={{ fontSize: 14, color: C.inkMid, lineHeight: 1.6, margin: "0 0 14px", maxWidth: 500 }}>{blurb}</p>;
+        })()}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", margin: "0 0 14px" }}>
           <MatchupBreakdown game={game} />
           <TeamLinks game={game} />
@@ -2006,10 +2004,10 @@ function GameCard({ game, alertOn, onAlert, compact }) {
 
   if (slim && !expanded) {
     const liveBit = isTennis ? (tennisScore || "LIVE") : (game.score ? `${game.score[game.awayAbbr]}-${game.score[game.homeAbbr]}` : "LIVE");
-    // "Worth your time" (4) and up get one extra line of description — built
-    // from data already on the card (the same reasons behind the verdict
-    // badge), so it's instant, no extra fetch or load time.
-    const desc = game.verdict >= 4 ? gameBlurb(game) : "";
+    // One extra line of description on every condensed card — built from
+    // data already on the card (curated summary or the same reasons behind
+    // the verdict badge), so it's instant, no extra fetch or load time.
+    const desc = gameBlurb(game);
     return (
       <div onClick={() => setExpanded(true)} style={{
         display: "flex", background: C.surface, borderRadius: 10, overflow: "hidden", marginBottom: 8,
@@ -2044,7 +2042,10 @@ function GameCard({ game, alertOn, onAlert, compact }) {
             <span style={{ fontSize: 12, color: C.inkFaint, flexShrink: 0 }}>›</span>
           </div>
           {desc && (
-            <div style={{ fontSize: 11.5, color: C.inkFaint, lineHeight: 1.4, paddingLeft: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{desc}</div>
+            <div style={{
+              fontSize: 11.5, color: C.inkFaint, lineHeight: 1.4, paddingLeft: 2,
+              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+            }}>{desc}</div>
           )}
         </div>
       </div>
@@ -2124,21 +2125,17 @@ function GameCard({ game, alertOn, onAlert, compact }) {
           </div>
         )}
 
-        {/* Tagline and summary are the same sentence for API-sourced games —
-            show one line about the matchup, never the same text twice. */}
+        {/* One-sentence description on every full card — real summary if
+            we have a curated one, otherwise the verdict reasons already
+            computed on the server. */}
         {(() => {
-          const hasRealSummary = game.summary && game.summary.trim() !== (game.tagline || "").trim();
-          if ((game.verdict >= 5 || isLive) && hasRealSummary) {
-            return <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, margin: "0 0 12px" }}>{game.summary}</p>;
-          }
-          if (game.verdict >= 5 && game.tagline) {
-            return <div style={{ fontSize: 13, color: lc, fontWeight: 700, marginBottom: 10 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>;
-          }
-          return null;
+          const blurb = gameBlurb(game);
+          if (!blurb) return null;
+          return <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, margin: "0 0 12px" }}>{blurb}</p>;
         })()}
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", margin: "0 0 10px" }}>
-          {!isLive && <MatchupBreakdown game={game} />}
+          <MatchupBreakdown game={game} />
           <TeamLinks game={game} />
         </div>
 
@@ -3121,7 +3118,7 @@ function LoginModal({ onClose, onLogin }) {
 
 /* ─── AI WEEK RUNDOWN ─────────────────────────────────────── */
 
-function WeekRundown({ liveEvents }) {
+function WeekRundown({ liveEvents, stars }) {
   const [state, setState] = useState("idle"); // idle | loading | done | error
   const [text, setText] = useState("");
   const [wcCache, setWcCache] = useState([]);
@@ -3161,19 +3158,34 @@ function WeekRundown({ liveEvents }) {
       note: e.note || e.summary || e.tagline || "",
     })));
 
-  // Merge curated + live + WC, de-duping by date + teams, capped so the list
-  // (and the prompt) stays to a real "what matters" slate, not every game.
+  // Merge curated + live + WC, de-duping by date + teams. Filtered against
+  // the user's follows so the slate isn't a wall of daily baseball for
+  // someone who follows the WNBA — followed leagues/teams always show,
+  // non-followed sports only surface when a game is actually big.
+  const followsLeague = lg => (stars?.leagues || []).includes(lg);
+  const followsTeam = g => (stars?.teams || []).some(t => t.league === g.league && (g.home === t.name || g.away === t.name));
   const seen = new Set();
   const week = [...curated, ...liveWeek, ...wcExtras]
     .filter(e => {
       if (e.verdict < 3) return false;
+      // Follows override everything. For anything else, only "worth your time"
+      // and up — a random 3/5 baseball game shouldn't crowd out a genuine
+      // marquee event later in the week.
+      if (!(followsLeague(e.league) || followsTeam(e) || (e.verdict || 0) >= 4)) return false;
       const k = `${e.d}:${e.league}:${e.home}:${e.away}`;
       if (seen.has(k)) return false;
       seen.add(k);
       return true;
     })
-    .sort((a, b) => a.d.localeCompare(b.d) || b.verdict - a.verdict)
-    .slice(0, 24);
+    // Chronological, but within a day pinpoint personal follows first so
+    // the reader sees "their" games at the top of each day.
+    .sort((a, b) => {
+      if (a.d !== b.d) return a.d.localeCompare(b.d);
+      const aPersonal = followsTeam(a) ? 2 : followsLeague(a.league) ? 1 : 0;
+      const bPersonal = followsTeam(b) ? 2 : followsLeague(b.league) ? 1 : 0;
+      return (bPersonal - aPersonal) || (b.verdict - a.verdict);
+    })
+    .slice(0, 20);
 
   const brief = week.map(e =>
     `${e.d.slice(5)}: ${e.away ? `${e.away} at ${e.home}` : e.title} (${e.league}, importance ${e.verdict}/5) — ${e.note}`
@@ -5411,30 +5423,53 @@ function FeedbackTab() {
    it won't show again until the next calendar day (tracked in storage).
    ──────────────────────────────────────────────────────────────── */
 
-function DailyRundownModal({ liveEvents, onClose }) {
+function DailyRundownModal({ liveEvents, stars, onClose }) {
   const [state, setState] = useState("loading"); // loading | done | error
   const [text, setText] = useState("");
   const today = todayKey();
 
-  // Today's notable games — curated + live, importance-sorted
+  // Today's notable games — curated + live, importance-sorted. Recomputed
+  // each render so the modal sees liveEvents once it actually loads (the
+  // useEffect below waits for liveEvents to be non-null before prompting).
   const merged = mergeDayEvents(today, liveEvents);
+  const followsLeague = lg => (stars?.leagues || []).includes(lg);
+  const followsTeam = g => (stars?.teams || []).some(t => t.league === g.league && (g.home === t.name || g.away === t.name));
   const games = merged
     .slice()
-    .sort((a, b) => (b.verdict || 0) - (a.verdict || 0))
-    .filter(e => (e.verdict || 0) >= 3);
+    // Verdict is the base filter, but a followed league/team ALWAYS surfaces —
+    // if the user follows the WNBA, a 3/5 WNBA game beats a 4/5 baseball game
+    // they don't care about.
+    .filter(e => (e.verdict || 0) >= 4 || followsLeague(e.league) || followsTeam(e))
+    .sort((a, b) => {
+      const aPersonal = followsTeam(a) ? 2 : followsLeague(a.league) ? 1 : 0;
+      const bPersonal = followsTeam(b) ? 2 : followsLeague(b.league) ? 1 : 0;
+      return (bPersonal - aPersonal) || ((b.verdict || 0) - (a.verdict || 0));
+    });
 
   useEffect(() => {
+    // Wait until liveEvents actually finishes loading — running earlier
+    // handed the model an empty list, so it always answered "quiet day."
+    if (!liveEvents) return;
     let cancelled = false;
     const run = async () => {
-      const list = (games.length ? games : merged).slice(0, 12);
+      const list = games.slice(0, 12);
       const brief = list.map(e =>
-        `${e.away ? `${e.away} at ${e.home}` : (e.title || "")} (${e.league}, importance ${e.verdict || 3}/5)${e.time ? ` at ${e.time}` : ""} — ${e.note || e.summary || ""}`
+        `${e.away ? `${e.away} at ${e.home}` : (e.title || "")} (${e.league}, ${e.verdict || 3}/5)${e.time ? ` @ ${e.time}` : ""}`
       ).join("\n");
+      const follows = [
+        ...(stars?.leagues || []),
+        ...(stars?.teams || []).map(t => t.name),
+      ].join(", ");
+      const followLine = follows ? `The reader follows: ${follows}.` : "";
 
-      const prompt = `You are a friendly sports guide writing for a CASUAL fan who often misses games because they never know the schedule. Below is TODAY's slate of notable games. Write a warm, punchy 2-3 sentence rundown of what's worth watching today and why. Lead with the single biggest can't-miss game. No jargon, no hype clichés, no bullet points (a separate list handles those) — just plain, flowing guidance like a knowledgeable friend texting them. Do not invent any games not listed. If the list is empty, say it's a quiet day with nothing major on.
+      const prompt = `Below is today's sports slate across every sport. ${followLine}
 
-Today's games:
-${brief || "(no notable games)"}`;
+Write 1-2 SHORT, blunt sentences telling a casual fan what's actually worth watching today. Lead with the top thing — a big tournament round underway (US Open, FIBA), a followed team playing, or a marquee matchup. Skip anything that's just a regular-season baseball game unless it's genuinely notable.
+
+If there really is nothing on, say so plainly in one sentence. Do NOT list every game — a separate list handles that. No hype, no "get ready," no fluff. Do not invent games not listed.
+
+Today:
+${brief || "(no games)"}`;
 
       try {
         const res = await fetch("/api/claude", {
@@ -5442,7 +5477,7 @@ ${brief || "(no notable games)"}`;
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             model: "claude-sonnet-4-20250514",
-            max_tokens: 1000,
+            max_tokens: 200,
             messages: [{ role: "user", content: prompt }],
           }),
         });
@@ -5457,7 +5492,7 @@ ${brief || "(no notable games)"}`;
     };
     run();
     return () => { cancelled = true; };
-  }, []);
+  }, [liveEvents]);
 
   const dotColor = v => v >= 5 ? "#FF5A5A" : v === 4 ? "#FFA94D" : "#6BA4FF";
 
@@ -5730,7 +5765,7 @@ export default function App() {
       />
 
       {showRundown && (
-        <DailyRundownModal liveEvents={appLiveEvents} onClose={dismissRundown} />
+        <DailyRundownModal liveEvents={appLiveEvents} stars={stars} onClose={dismissRundown} />
       )}
 
       <header style={{ background: C.red, position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 10px rgba(200,16,46,0.2)" }}>
@@ -5773,7 +5808,7 @@ export default function App() {
       <main style={{ maxWidth: 760, margin: "0 auto", padding: "22px 18px 80px" }}>
         {tab === "today" && (
           <>
-            <WeekRundown liveEvents={appLiveEvents} />
+            <WeekRundown liveEvents={appLiveEvents} stars={stars} />
             <FilterBar filters={filters} setFilters={setFilters} />
             {appLiveStatus === "done" && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>
