@@ -409,9 +409,12 @@ function useLiveSchedule() {
           // Rank prefix reads the way TV does: "#3 Ohio State".
           const withRank = (name, rank) => (rank ? `#${rank} ${name}` : name);
           // Tennis is player vs player in a named round, not a team matchup.
+          // No league name in the label itself — the league pill/badge on the
+          // card already says that, so spelling it out again here would just
+          // repeat it.
           const label = cfg.lg === "USO"
-            ? `${g.away} vs ${g.home}${g.round ? ` · ${g.round}` : ""} · US Open`
-            : `${withRank(g.away, g.awayRank)} ${cfg.atWord} ${withRank(g.home, g.homeRank)} · ${cfg.blurb}`;
+            ? `${g.away} vs ${g.home}${g.round ? ` · ${g.round}` : ""}`
+            : `${withRank(g.away, g.awayRank)} ${cfg.atWord} ${withRank(g.home, g.homeRank)}`;
           (grouped[g.dateKey] = grouped[g.dateKey] || []).push({
             league: cfg.lg, dateKey: g.dateKey, home: g.home, away: g.away,
             homeAbbr: g.homeAbbr, awayAbbr: g.awayAbbr, time: g.time,
@@ -1494,6 +1497,18 @@ function VerdictLine({ level, why }) {
   );
 }
 
+// Just the "why" reasons, no badge — for cards that already show the verdict
+// badge in a corner (repeating it in the body would label the same thing twice).
+function VerdictReasons({ why }) {
+  const reasons = (why || []).filter(Boolean);
+  if (!reasons.length) return null;
+  return (
+    <div style={{ fontSize: 11, color: C.inkFaint, fontWeight: 600, marginBottom: 8 }}>
+      {reasons.slice(0, 3).join(" · ")}
+    </div>
+  );
+}
+
 // Small colored dot standing in for the verdict on condensed one-line rows,
 // using the same scale as the badge and the legend.
 function VerdictDot({ level }) {
@@ -1715,7 +1730,7 @@ function FilterBar({ filters, setFilters }) {
         {sportOpts.map(lg => {
           const active = filters.sport === lg;
           return (
-            <button key={lg} onClick={() => { setFilters(f => ({ ...f, sport: lg, team: "ALL" })); setShowTeamGrid(lg !== "ALL"); }} style={{
+            <button key={lg} onClick={() => { setFilters(f => ({ ...f, sport: lg, team: "ALL", city: "ALL" })); setShowTeamGrid(lg !== "ALL"); }} style={{
               flexShrink: 0, padding: "6px 13px", borderRadius: 16, cursor: "pointer",
               background: active ? (LEAGUE_COLORS[lg] || C.red) : C.surface,
               color: active ? "#fff" : C.inkDim, fontSize: 12, fontWeight: 700,
@@ -1854,11 +1869,18 @@ function HeroCard({ game, alertOn, onAlert }) {
             <span style={{ fontSize: 28, fontWeight: 900, color: C.ink, lineHeight: 1.1, letterSpacing: "-0.02em" }}>{game.home}</span>
           </span>
         </div>
-        <div style={{ fontSize: 14, color: lc, fontWeight: 800, marginBottom: 14 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>
-        <div style={{ marginBottom: 14 }}><VerdictLine level={game.verdict} why={game.verdictWhy} /></div>
-        <p style={{ fontSize: 14, color: C.inkMid, lineHeight: 1.6, margin: "0 0 14px", maxWidth: 500 }}>{game.summary}</p>
-        <MatchupBreakdown game={game} />
-        <TeamLinks game={game} />
+        <div style={{ marginBottom: 10 }}><VerdictLine level={game.verdict} why={game.verdictWhy} /></div>
+        {/* Tagline and summary say the same thing for API-sourced games —
+            show one line about the matchup, never the same text twice. */}
+        {game.summary && game.summary.trim() !== (game.tagline || "").trim() ? (
+          <p style={{ fontSize: 14, color: C.inkMid, lineHeight: 1.6, margin: "0 0 14px", maxWidth: 500 }}>{game.summary}</p>
+        ) : game.tagline ? (
+          <div style={{ fontSize: 14, color: lc, fontWeight: 700, marginBottom: 14 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>
+        ) : null}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", margin: "0 0 14px" }}>
+          <MatchupBreakdown game={game} />
+          <TeamLinks game={game} />
+        </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <WatchOptions game={game} color={lc} big />
           <button onClick={() => onAlert(game.id)} style={{
@@ -1883,20 +1905,24 @@ let NAV_VIEW_TEAM = null;
 // "Learn about this team" deep-links for BOTH teams in a game. Kept separate
 // from MatchupBreakdown so they render on every game card — including live
 // ones, where the AI breakdown is hidden but you still want the team info.
+// `display: contents` lets the buttons sit directly in the parent's flex row
+// instead of forcing their own line — this and MatchupBreakdown's button
+// share one compact toolbar row rather than stacking as separate blocks.
 function TeamLinks({ game }) {
   const lc = LEAGUE_COLORS[game.league];
   const btn = (label) => (
-    <button key={label} onClick={() => NAV_VIEW_TEAM && NAV_VIEW_TEAM(game.league, label)} style={{
-      background: "transparent", color: lc, border: `1px solid ${lc}`, borderRadius: 6,
-      padding: "6px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-    }}>Learn about {label} →</button>
+    <button key={label} onClick={() => NAV_VIEW_TEAM && NAV_VIEW_TEAM(game.league, label)}
+      title={`Learn about ${label}`} style={{
+      display: "inline-flex", alignItems: "center", gap: 5,
+      background: "transparent", color: lc, border: `1px solid ${lc}`, borderRadius: 14,
+      padding: "4px 10px 4px 6px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+      maxWidth: 150,
+    }}>
+      <TeamLogo team={label} size={16} />
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+    </button>
   );
-  return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "2px 0 12px" }}>
-      {btn(game.away)}
-      {btn(game.home)}
-    </div>
-  );
+  return <div style={{ display: "contents" }}>{btn(game.away)}{btn(game.home)}</div>;
 }
 
 // On-demand AI matchup breakdown.
@@ -1918,26 +1944,30 @@ function MatchupBreakdown({ game }) {
     } catch { setState("error"); }
   };
 
+  if (state === "idle") {
+    return (
+      <button onClick={analyze} style={{
+        background: C.bg, color: lc, border: `1px solid ${C.line}`, borderRadius: 14,
+        padding: "5px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+      }}>🔍 Breakdown</button>
+    );
+  }
+
+  // Loading/done/error take the full row width, so they get their own line
+  // below whatever else is in the shared button row.
   return (
-    <div style={{ margin: "6px 0 8px" }}>
-      {state === "idle" && (
-        <button onClick={analyze} style={{
-          display: "block", marginBottom: 12,
-          background: C.bg, color: lc, border: `1px solid ${C.line}`, borderRadius: 6,
-          padding: "8px 13px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-        }}>🔍 Break down this matchup</button>
-      )}
+    <div style={{ flexBasis: "100%" }}>
       {state === "loading" && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.inkDim, padding: "4px 0 12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.inkDim, padding: "4px 0" }}>
           <span style={{ width: 13, height: 13, border: `2px solid ${C.line}`, borderTopColor: lc, borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
           Researching both teams (a few seconds)…
         </div>
       )}
       {state === "done" && (
-        <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.65, margin: "0 0 12px", background: C.bg, borderRadius: 8, padding: "12px 14px", whiteSpace: "pre-wrap" }}>{text}</p>
+        <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.65, margin: "6px 0 0", background: C.bg, borderRadius: 8, padding: "12px 14px", whiteSpace: "pre-wrap" }}>{text}</p>
       )}
       {state === "error" && (
-        <p style={{ fontSize: 12.5, color: C.inkDim, margin: "0 0 12px" }}>
+        <p style={{ fontSize: 12.5, color: C.inkDim, margin: "4px 0 0" }}>
           Couldn't load the breakdown. <span onClick={analyze} style={{ color: lc, textDecoration: "underline", cursor: "pointer" }}>Try again</span>.
         </p>
       )}
@@ -2064,11 +2094,9 @@ function GameCard({ game, alertOn, onAlert, compact }) {
           </div>
         )}
 
-        {game.verdict >= 5 && (
-          <div style={{ fontSize: 13, color: lc, fontWeight: 700, marginBottom: 6 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>
-        )}
-
-        <VerdictLine level={game.verdict} why={game.verdictWhy} />
+        {/* The corner badge above already labels the verdict — only show the
+            "why" reasons here, not the badge a second time. */}
+        <VerdictReasons why={game.verdictWhy} />
 
         {(game.awayRecord || game.homeRecord) && (
           <div style={{ fontSize: 11.5, color: C.inkFaint, fontWeight: 600, marginBottom: 8 }}>
@@ -2076,12 +2104,23 @@ function GameCard({ game, alertOn, onAlert, compact }) {
           </div>
         )}
 
-        {(game.verdict >= 5 || isLive) && game.summary && (
-          <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, margin: "0 0 12px" }}>{game.summary}</p>
-        )}
+        {/* Tagline and summary are the same sentence for API-sourced games —
+            show one line about the matchup, never the same text twice. */}
+        {(() => {
+          const hasRealSummary = game.summary && game.summary.trim() !== (game.tagline || "").trim();
+          if ((game.verdict >= 5 || isLive) && hasRealSummary) {
+            return <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, margin: "0 0 12px" }}>{game.summary}</p>;
+          }
+          if (game.verdict >= 5 && game.tagline) {
+            return <div style={{ fontSize: 13, color: lc, fontWeight: 700, marginBottom: 10 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>;
+          }
+          return null;
+        })()}
 
-        {!isLive && <MatchupBreakdown game={game} />}
-        <TeamLinks game={game} />
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", margin: "0 0 10px" }}>
+          {!isLive && <MatchupBreakdown game={game} />}
+          <TeamLinks game={game} />
+        </div>
 
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <WatchOptions game={game} color={lc} />
