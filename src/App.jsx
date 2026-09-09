@@ -1688,8 +1688,10 @@ function teamCity(teamName) {
 }
 
 function FilterBar({ filters, setFilters }) {
+  const [showTeamGrid, setShowTeamGrid] = useState(false);
   const activeCount = Object.values(filters).filter(v => v !== "ALL").length;
   const sportOpts = ["ALL", ...Object.keys(LEAGUE_COLORS)];
+  const lc = LEAGUE_COLORS[filters.sport] || C.red;
   const teamOpts = filters.sport === "ALL"
     ? []
     : (STAR_TEAMS[filters.sport] || []);
@@ -1701,7 +1703,7 @@ function FilterBar({ filters, setFilters }) {
         {sportOpts.map(lg => {
           const active = filters.sport === lg;
           return (
-            <button key={lg} onClick={() => setFilters(f => ({ ...f, sport: lg, team: "ALL", city: "ALL" }))} style={{
+            <button key={lg} onClick={() => { setFilters(f => ({ ...f, sport: lg, team: "ALL", city: "ALL" })); setShowTeamGrid(false); }} style={{
               flexShrink: 0, padding: "6px 13px", borderRadius: 16, cursor: "pointer",
               background: active ? (LEAGUE_COLORS[lg] || C.red) : C.surface,
               color: active ? "#fff" : C.inkDim, fontSize: 12, fontWeight: 700,
@@ -1712,56 +1714,70 @@ function FilterBar({ filters, setFilters }) {
         })}
       </div>
 
-      {/* Team pills — appear when a sport is selected, scrollable with logos */}
+      {/* Team filter — "All Teams" pill + selected team + "Browse teams" grid (matches Players tab) */}
       {teamOpts.length > 0 && (
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 2 }}>
-          <button onClick={() => setFilters(f => ({ ...f, team: "ALL" }))} style={{
-            flexShrink: 0, padding: "5px 11px", borderRadius: 14, cursor: "pointer",
-            background: filters.team === "ALL" ? C.ink : C.surface,
-            color: filters.team === "ALL" ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 700,
-            border: `1px solid ${filters.team === "ALL" ? C.ink : C.line}`,
-            fontFamily: "inherit", whiteSpace: "nowrap",
-          }}>All teams</button>
-          {teamOpts.map(t => {
-            const active = filters.team === t;
-            return (
-              <button key={t} onClick={() => setFilters(f => ({ ...f, team: t }))} style={{
-                flexShrink: 0, padding: "4px 11px 4px 5px", borderRadius: 14, cursor: "pointer",
-                background: active ? C.ink : C.surface,
-                color: active ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 700,
-                border: `1px solid ${active ? C.ink : C.line}`,
-                fontFamily: "inherit", whiteSpace: "nowrap",
-                display: "inline-flex", alignItems: "center", gap: 5,
-              }}>
-                <TeamLogo team={t} size={20} />
-                {t}
-              </button>
-            );
-          })}
-        </div>
-      )}
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: showTeamGrid ? 10 : 0 }}>
+            <button onClick={() => { setFilters(f => ({ ...f, team: "ALL" })); setShowTeamGrid(false); }} style={{
+              padding: "6px 12px", borderRadius: 16, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+              background: filters.team === "ALL" ? lc + "18" : "transparent", color: filters.team === "ALL" ? lc : C.inkFaint,
+              border: `1px solid ${filters.team === "ALL" ? lc : C.line}`,
+            }}>All Teams</button>
+            {filters.team !== "ALL" && (
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 16,
+                background: lc + "18", color: lc, fontSize: 12, fontWeight: 700, border: `1px solid ${lc}`,
+              }}><TeamLogo team={filters.team} size={14} />{filters.team}</span>
+            )}
+            <button onClick={() => setShowTeamGrid(v => !v)} style={{
+              display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 16, cursor: "pointer",
+              background: "transparent", color: C.inkDim, fontSize: 12, fontWeight: 700, fontFamily: "inherit", border: `1px solid ${C.line}`,
+            }}>⊞ {showTeamGrid ? "Hide teams" : "Browse teams"}</button>
+            {filters.city !== "ALL" && (
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 4, padding: "6px 10px", borderRadius: 16,
+                background: "#1F7A4D18", color: "#1F7A4D", fontSize: 11, fontWeight: 700, border: "1px solid #1F7A4D",
+              }}>📍 {filters.city} <span onClick={() => setFilters(f => ({ ...f, city: "ALL" }))} style={{ cursor: "pointer", marginLeft: 2 }}>✕</span></span>
+            )}
+          </div>
 
-      {/* City pills — always available as a secondary filter */}
-      {filters.sport !== "ALL" && (
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 2 }}>
-          <span style={{ fontSize: 10, fontWeight: 800, color: C.inkFaint, letterSpacing: "0.1em", flexShrink: 0, alignSelf: "center", marginRight: 4 }}>CITY</span>
-          {["ALL", ...CITIES].map(c => {
-            const active = filters.city === c;
-            return (
-              <button key={c} onClick={() => setFilters(f => ({ ...f, city: c }))} style={{
-                flexShrink: 0, padding: "4px 10px", borderRadius: 12, cursor: "pointer",
-                background: active ? "#1F7A4D" : C.surface,
-                color: active ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 600,
-                border: `1px solid ${active ? "#1F7A4D" : C.line}`,
-                fontFamily: "inherit", whiteSpace: "nowrap",
-              }}>{c === "ALL" ? "Any" : c}</button>
-            );
-          })}
+          {showTeamGrid && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8, marginBottom: 8 }}>
+              {teamOpts.map(t => (
+                <button key={t} onClick={() => { setFilters(f => ({ ...f, team: t })); setShowTeamGrid(false); }} style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", cursor: "pointer",
+                  background: C.surface, border: `1px solid ${filters.team === t ? lc : C.line}`, borderRadius: 10, fontFamily: "inherit", textAlign: "left",
+                }}>
+                  <TeamLogo team={t} size={22} />
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* City filter row */}
+          {!showTeamGrid && (
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 8, paddingBottom: 2 }}>
+              <span style={{ fontSize: 10, fontWeight: 800, color: C.inkFaint, letterSpacing: "0.1em", flexShrink: 0, alignSelf: "center", marginRight: 2 }}>CITY</span>
+              {["ALL", ...CITIES].map(c => {
+                const active = filters.city === c;
+                return (
+                  <button key={c} onClick={() => setFilters(f => ({ ...f, city: c }))} style={{
+                    flexShrink: 0, padding: "4px 10px", borderRadius: 12, cursor: "pointer",
+                    background: active ? "#1F7A4D" : C.surface,
+                    color: active ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 600,
+                    border: `1px solid ${active ? "#1F7A4D" : C.line}`,
+                    fontFamily: "inherit", whiteSpace: "nowrap",
+                  }}>{c === "ALL" ? "Any" : c}</button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
       {activeCount > 0 && (
-        <button onClick={() => setFilters({ sport: "ALL", team: "ALL", city: "ALL" })} style={{
+        <button onClick={() => { setFilters({ sport: "ALL", team: "ALL", city: "ALL" }); setShowTeamGrid(false); }} style={{
           background: "none", border: "none", cursor: "pointer", padding: "2px 0",
           fontSize: 11, fontWeight: 700, color: C.inkFaint, fontFamily: "inherit",
         }}>✕ Clear filters</button>
