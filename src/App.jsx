@@ -1497,6 +1497,17 @@ function VerdictLine({ level, why }) {
   );
 }
 
+// One-sentence description for a game — no network call, built entirely from
+// data already on the card. Curated games (hand-written summary) use that;
+// everything else is built from the same "why" reasons already computed for
+// the verdict badge, so it costs nothing extra to show.
+function gameBlurb(game) {
+  if (game.summary && game.summary.trim() !== (game.tagline || "").trim()) return game.summary;
+  const reasons = (game.verdictWhy || []).filter(Boolean);
+  if (reasons.length) return reasons.slice(0, 3).join(" · ");
+  return game.tagline || "";
+}
+
 // Just the "why" reasons, no badge — for cards that already show the verdict
 // badge in a corner (repeating it in the body would label the same thing twice).
 function VerdictReasons({ why }) {
@@ -1995,6 +2006,10 @@ function GameCard({ game, alertOn, onAlert, compact }) {
 
   if (slim && !expanded) {
     const liveBit = isTennis ? (tennisScore || "LIVE") : (game.score ? `${game.score[game.awayAbbr]}-${game.score[game.homeAbbr]}` : "LIVE");
+    // "Worth your time" (4) and up get one extra line of description — built
+    // from data already on the card (the same reasons behind the verdict
+    // badge), so it's instant, no extra fetch or load time.
+    const desc = game.verdict >= 4 ? gameBlurb(game) : "";
     return (
       <div onClick={() => setExpanded(true)} style={{
         display: "flex", background: C.surface, borderRadius: 10, overflow: "hidden", marginBottom: 8,
@@ -2002,30 +2017,35 @@ function GameCard({ game, alertOn, onAlert, compact }) {
         boxShadow: "0 1px 4px rgba(20,32,43,0.03)",
       }}>
         <div style={{ width: 4, background: lc, flexShrink: 0 }} />
-        <div style={{ flex: 1, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <VerdictDot level={game.verdict} />
-          <LeaguePill league={game.league} small />
-          <div style={{ display: "flex", alignItems: "center", gap: 5, flex: 1, minWidth: 0 }}>
-            <TeamLogo team={game.away} size={20} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {game.awayRank ? `#${game.awayRank} ` : ""}{game.away}
-            </span>
-            <span style={{ color: C.inkFaint, fontSize: 11 }}>{game.atWord || "at"}</span>
-            <TeamLogo team={game.home} size={20} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {game.homeRank ? `#${game.homeRank} ` : ""}{game.home}
-            </span>
+        <div style={{ flex: 1, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <VerdictDot level={game.verdict} />
+            <LeaguePill league={game.league} small />
+            <div style={{ display: "flex", alignItems: "center", gap: 5, flex: 1, minWidth: 0 }}>
+              <TeamLogo team={game.away} size={20} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {game.awayRank ? `#${game.awayRank} ` : ""}{game.away}
+              </span>
+              <span style={{ color: C.inkFaint, fontSize: 11 }}>{game.atWord || "at"}</span>
+              <TeamLogo team={game.home} size={20} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {game.homeRank ? `#${game.homeRank} ` : ""}{game.home}
+              </span>
+            </div>
+            {isLive ? (
+              <span style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "pulse 1.4s infinite" }} />
+                <span style={{ fontSize: 11, fontWeight: 800, color: C.red }}>{liveBit}</span>
+              </span>
+            ) : (
+              <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{game.time}</span>
+            )}
+            {game.channel && <span style={{ fontSize: 10, color: C.inkDim, fontWeight: 600, flexShrink: 0 }}>{game.channel}</span>}
+            <span style={{ fontSize: 12, color: C.inkFaint, flexShrink: 0 }}>›</span>
           </div>
-          {isLive ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "pulse 1.4s infinite" }} />
-              <span style={{ fontSize: 11, fontWeight: 800, color: C.red }}>{liveBit}</span>
-            </span>
-          ) : (
-            <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{game.time}</span>
+          {desc && (
+            <div style={{ fontSize: 11.5, color: C.inkFaint, lineHeight: 1.4, paddingLeft: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{desc}</div>
           )}
-          {game.channel && <span style={{ fontSize: 10, color: C.inkDim, fontWeight: 600, flexShrink: 0 }}>{game.channel}</span>}
-          <span style={{ fontSize: 12, color: C.inkFaint, flexShrink: 0 }}>›</span>
         </div>
       </div>
     );
@@ -3130,17 +3150,19 @@ function WeekRundown({ liveEvents }) {
       time: g.time || "", verdict: g.verdict || 3, channel: g.channel || "Fox", note: g.note || "",
     }));
 
-  // Live WNBA games for the week (this rundown's focus sport). Keeps the slate
-  // current now that the curated CAL_EVENTS have aged out. MLB's daily grind is
-  // left out on purpose so the rundown stays about can't-miss games.
+  // Live games for the week across EVERY sport currently in season — not just
+  // WNBA. The old WNBA-only filter meant this went blank (and felt "broken")
+  // whenever WNBA had a quiet week even while other sports (US Open, NFL,
+  // CFB, FIBA…) were in full swing.
   const liveWeek = days.flatMap(d => (liveEvents && liveEvents[d] ? liveEvents[d] : [])
-    .filter(e => e.league === "WNBA")
     .map(e => ({
-      d, league: "WNBA", home: e.home, away: e.away,
-      time: e.time || "", verdict: e.verdict || 3, channel: e.channel || "", note: e.note || e.summary || "",
+      d, league: e.league, home: e.home, away: e.away,
+      time: e.time || "", verdict: e.verdict || 3, channel: e.channel || "",
+      note: e.note || e.summary || e.tagline || "",
     })));
 
-  // Merge curated + live + WC, de-duping by date + teams.
+  // Merge curated + live + WC, de-duping by date + teams, capped so the list
+  // (and the prompt) stays to a real "what matters" slate, not every game.
   const seen = new Set();
   const week = [...curated, ...liveWeek, ...wcExtras]
     .filter(e => {
@@ -3150,7 +3172,8 @@ function WeekRundown({ liveEvents }) {
       seen.add(k);
       return true;
     })
-    .sort((a, b) => a.d.localeCompare(b.d) || b.verdict - a.verdict);
+    .sort((a, b) => a.d.localeCompare(b.d) || b.verdict - a.verdict)
+    .slice(0, 24);
 
   const brief = week.map(e =>
     `${e.d.slice(5)}: ${e.away ? `${e.away} at ${e.home}` : e.title} (${e.league}, importance ${e.verdict}/5) — ${e.note}`
@@ -3168,7 +3191,7 @@ function WeekRundown({ liveEvents }) {
     }
     setState("loading");
 
-    const prompt = `You are a friendly sports guide writing for a CASUAL fan who follows the WNBA but often misses games because they never know the schedule. Below is this week's slate of notable games. Write a warm, punchy 3-4 sentence rundown of what's worth watching this week and why. Lead with the single biggest can't-miss game. Mention day names. No jargon, no hype clichés, no bullet points (a separate list handles those) — just plain, flowing guidance like a knowledgeable friend texting them. Do not invent any games not listed.
+    const prompt = `Below is this week's slate of notable games across every sport. In 1-2 SHORT, blunt sentences, tell a casual fan the single biggest thing going on this week — lead with whatever matters most (a major tournament underway, a playoff race, a marquee matchup). If it needs one clause of context for a non-fan (e.g. "the US Open — tennis's last Grand Slam of the year"), include it briefly. Do NOT list individual games or day names — a separate list already covers that. No hype clichés, no "get ready," no fluff. Do not invent anything not in the list below.
 
 This week's games:
 ${brief}`;
@@ -3179,7 +3202,7 @@ ${brief}`;
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
+          max_tokens: 200,
           messages: [{ role: "user", content: prompt }],
         }),
       });

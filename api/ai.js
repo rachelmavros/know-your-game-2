@@ -77,18 +77,18 @@ async function doMatchup(body) {
     const h = find(home), a = find(away);
     if (h || a) recLine = `Current records (use these exact numbers): ${away} ${a || 'n/a'}, ${home} ${h || 'n/a'}.`;
   }
-  const prompt = `Write a tight, CONCRETE briefing for a casual fan about the ${league || ''} game ${away} at ${home} — not flowery hype.
+  const prompt = `Give a casual fan the KEY facts about the ${league || ''} game ${away} at ${home}. No hype, no fluff, no scene-setting — just what matters.
 
 ${recLine}
 
-In 4-6 short sentences (plain text: no headers, no markdown, no bullet symbols):
-- Where each team stands and whether they're good right now (use the records above if given).
-- Each team's key player(s), and specifically call out notable rookies or young players.
-- One concrete point about a team's style — an offensive or defensive strength or weakness.
-- The storyline that makes this game matter (rivalry, playoff race, a star to watch).
+Output 2-4 short, blunt sentences (plain text, no markdown, no bullet symbols), covering ONLY what's actually relevant here:
+- Team quality/ranking if notable (e.g. "top-ranked team", "still winless")
+- Whether it's likely close or a blowout
+- Stakes if any (playoff race, elimination, rivalry) — otherwise say it plainly ("just a regular-season game, nothing on the line")
+- One standout player ONLY if genuinely relevant to why this game matters
 
-Be specific and substantive. Do NOT invent exact stats or records beyond the ones provided above — if unsure of a number, describe it qualitatively. Warm but informative.`;
-  const raw = await claude({ max_tokens: 900, messages: [{ role: 'user', content: prompt }] });
+Skip anything not relevant — do not pad to hit a length. Do NOT invent exact stats beyond what's given above. Dry and factual, not warm.`;
+  const raw = await claude({ max_tokens: 250, messages: [{ role: 'user', content: prompt }] });
   const text = (raw || '').trim();
   return text ? { ok: true, text } : { ok: false, error: 'no text' };
 }
