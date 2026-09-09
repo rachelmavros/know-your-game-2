@@ -1505,7 +1505,16 @@ function gameBlurb(game) {
   if (game.summary && game.summary.trim() !== (game.tagline || "").trim()) return game.summary;
   const reasons = (game.verdictWhy || []).filter(Boolean);
   if (reasons.length) return reasons.slice(0, 3).join(" · ");
-  return game.tagline || "";
+  // Tennis (USO) often has no records/rank to generate a "why" reason, but
+  // the round itself — and the final score once it's over — is real info
+  // that isn't shown anywhere else on the card.
+  if (game.round) return [game.round, game.resultText].filter(Boolean).join(" · ");
+  // API-sourced games' tagline is just "{team} at/vs {team}" — identical to
+  // what's already shown in the header, so falling back to it here would
+  // just repeat the team names rather than add anything. Curated games'
+  // taglines are genuine hand-written quips, so those are worth reusing.
+  if (!game.fromApi && game.tagline) return game.tagline;
+  return "";
 }
 
 // Just the "why" reasons, no badge — for cards that already show the verdict
@@ -2004,10 +2013,9 @@ function GameCard({ game, alertOn, onAlert, compact }) {
 
   if (slim && !expanded) {
     const liveBit = isTennis ? (tennisScore || "LIVE") : (game.score ? `${game.score[game.awayAbbr]}-${game.score[game.homeAbbr]}` : "LIVE");
-    // One extra line of description on every condensed card — built from
-    // data already on the card (curated summary or the same reasons behind
-    // the verdict badge), so it's instant, no extra fetch or load time.
-    const desc = gameBlurb(game);
+    // Collapsed preview stays ONE line, no description — tap to expand for
+    // that. Cramming a description in here is exactly the clutter this
+    // condensed view exists to avoid.
     return (
       <div onClick={() => setExpanded(true)} style={{
         display: "flex", background: C.surface, borderRadius: 10, overflow: "hidden", marginBottom: 8,
@@ -2015,38 +2023,30 @@ function GameCard({ game, alertOn, onAlert, compact }) {
         boxShadow: "0 1px 4px rgba(20,32,43,0.03)",
       }}>
         <div style={{ width: 4, background: lc, flexShrink: 0 }} />
-        <div style={{ flex: 1, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <VerdictDot level={game.verdict} />
-            <LeaguePill league={game.league} small />
-            <div style={{ display: "flex", alignItems: "center", gap: 5, flex: 1, minWidth: 0 }}>
-              <TeamLogo team={game.away} size={20} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {game.awayRank ? `#${game.awayRank} ` : ""}{game.away}
-              </span>
-              <span style={{ color: C.inkFaint, fontSize: 11 }}>{game.atWord || "at"}</span>
-              <TeamLogo team={game.home} size={20} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {game.homeRank ? `#${game.homeRank} ` : ""}{game.home}
-              </span>
-            </div>
-            {isLive ? (
-              <span style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-                <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "pulse 1.4s infinite" }} />
-                <span style={{ fontSize: 11, fontWeight: 800, color: C.red }}>{liveBit}</span>
-              </span>
-            ) : (
-              <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{game.time}</span>
-            )}
-            {game.channel && <span style={{ fontSize: 10, color: C.inkDim, fontWeight: 600, flexShrink: 0 }}>{game.channel}</span>}
-            <span style={{ fontSize: 12, color: C.inkFaint, flexShrink: 0 }}>›</span>
+        <div style={{ flex: 1, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <VerdictDot level={game.verdict} />
+          <LeaguePill league={game.league} small />
+          <div style={{ display: "flex", alignItems: "center", gap: 5, flex: 1, minWidth: 0 }}>
+            <TeamLogo team={game.away} size={20} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {game.awayRank ? `#${game.awayRank} ` : ""}{game.away}
+            </span>
+            <span style={{ color: C.inkFaint, fontSize: 11 }}>{game.atWord || "at"}</span>
+            <TeamLogo team={game.home} size={20} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {game.homeRank ? `#${game.homeRank} ` : ""}{game.home}
+            </span>
           </div>
-          {desc && (
-            <div style={{
-              fontSize: 11.5, color: C.inkFaint, lineHeight: 1.4, paddingLeft: 2,
-              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
-            }}>{desc}</div>
+          {isLive ? (
+            <span style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "pulse 1.4s infinite" }} />
+              <span style={{ fontSize: 11, fontWeight: 800, color: C.red }}>{liveBit}</span>
+            </span>
+          ) : (
+            <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{game.time}</span>
           )}
+          {game.channel && <span style={{ fontSize: 10, color: C.inkDim, fontWeight: 600, flexShrink: 0 }}>{game.channel}</span>}
+          <span style={{ fontSize: 12, color: C.inkFaint, flexShrink: 0 }}>›</span>
         </div>
       </div>
     );
@@ -3137,6 +3137,13 @@ function WeekRundown({ liveEvents, stars }) {
   const today = todayKey();
   const days = Array.from({ length: 7 }, (_, i) => addDays(today, i));
   const curated = days.flatMap(d => (CAL_EVENTS[d] || []).map(e => ({ d, ...e })));
+  // Milestone events (playoffs starting, championship rounds) belong here too,
+  // even when the actual matchup isn't set yet — a title-only entry (no
+  // home/away) renders as "TBD" rather than getting dropped. These matter to
+  // a casual fan regardless of which two teams end up in it.
+  const curatedMilestones = days.flatMap(d => BIG_EVENTS
+    .filter(e => e.dateKey === d)
+    .map(e => ({ d, league: e.league, title: e.title, time: "", verdict: 5, channel: e.tv || "", note: e.note || e.span || "" })));
   const curatedWcKeys = new Set(
     curated.filter(e => e.league === "WC").map(e => `${e.d}:${e.home}:${e.away}`)
   );
@@ -3165,27 +3172,31 @@ function WeekRundown({ liveEvents, stars }) {
   const followsLeague = lg => (stars?.leagues || []).includes(lg);
   const followsTeam = g => (stars?.teams || []).some(t => t.league === g.league && (g.home === t.name || g.away === t.name));
   const seen = new Set();
-  const week = [...curated, ...liveWeek, ...wcExtras]
+  const personalScore = e => followsTeam(e) ? 2 : followsLeague(e.league) ? 1 : 0;
+  const qualifying = [...curated, ...curatedMilestones, ...liveWeek, ...wcExtras]
     .filter(e => {
       if (e.verdict < 3) return false;
       // Follows override everything. For anything else, only "worth your time"
       // and up — a random 3/5 baseball game shouldn't crowd out a genuine
       // marquee event later in the week.
       if (!(followsLeague(e.league) || followsTeam(e) || (e.verdict || 0) >= 4)) return false;
-      const k = `${e.d}:${e.league}:${e.home}:${e.away}`;
+      const k = `${e.d}:${e.league}:${e.home || e.title}:${e.away || ""}`;
       if (seen.has(k)) return false;
       seen.add(k);
       return true;
-    })
-    // Chronological, but within a day pinpoint personal follows first so
-    // the reader sees "their" games at the top of each day.
-    .sort((a, b) => {
-      if (a.d !== b.d) return a.d.localeCompare(b.d);
-      const aPersonal = followsTeam(a) ? 2 : followsLeague(a.league) ? 1 : 0;
-      const bPersonal = followsTeam(b) ? 2 : followsLeague(b.league) ? 1 : 0;
-      return (bPersonal - aPersonal) || (b.verdict - a.verdict);
-    })
-    .slice(0, 20);
+    });
+  // Cap PER DAY, not globally, then flatten in day order. A cap taken after
+  // a flat chronological sort let a heavy day (today, with a full baseball
+  // slate) fill the whole budget before later days — like Saturday's big
+  // games — were ever reached. Capping per day guarantees every day in the
+  // week gets a shot at showing its best game(s).
+  const PER_DAY_CAP = 4;
+  const week = days.flatMap(d =>
+    qualifying
+      .filter(e => e.d === d)
+      .sort((a, b) => (personalScore(b) - personalScore(a)) || (b.verdict - a.verdict))
+      .slice(0, PER_DAY_CAP)
+  );
 
   const brief = week.map(e =>
     `${e.d.slice(5)}: ${e.away ? `${e.away} at ${e.home}` : e.title} (${e.league}, importance ${e.verdict}/5) — ${e.note}`
