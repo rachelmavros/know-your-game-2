@@ -383,6 +383,7 @@ function useLiveSchedule() {
         { lg: "WVB",  back: 2, fwd: 14, blurb: "College Volleyball",     atWord: "vs" },
         { lg: "FIBA", back: 3, fwd: 14, blurb: "FIBA Women's World Cup", atWord: "vs" },
         { lg: "USO",  back: 2, fwd: 14, blurb: "US Open",                atWord: "vs" },
+        { lg: "NFL",  back: 2, fwd: 14, blurb: "NFL",                    atWord: "at" },
       ];
       const [espnSets, wnbaScores, mlbScores] = await Promise.all([
         Promise.all(ESPN_LEAGUES.map(c => scoresFor(c.lg, addDays(today, -c.back), addDays(today, c.fwd)))),
@@ -1535,6 +1536,11 @@ const LEAGUE_WATCH = {
     { name: "League Pass", url: "https://www.nba.com/watch" },
     { name: "ESPN", url: "https://www.espn.com/watch/" },
   ],
+  NFL: [
+    { name: "NFL+", url: "https://www.nfl.com/plus/" },
+    { name: "ESPN", url: "https://www.espn.com/watch/" },
+    { name: "Peacock", url: "https://www.peacocktv.com/" },
+  ],
 };
 
 // Real watch pages for common US sports networks, so "Watch on <network>"
@@ -1554,6 +1560,8 @@ const NETWORK_URLS = {
   "amazon prime video": "https://www.amazon.com/gp/video/storefront",
   "cbs": "https://www.paramountplus.com/", "paramount+": "https://www.paramountplus.com/",
   "nbc": "https://www.nbc.com/live", "usa network": "https://www.usanetwork.com/live",
+  "nfl network": "https://www.nfl.com/network/", "nfln": "https://www.nfl.com/network/",
+  "nfl+": "https://www.nfl.com/plus/",
 };
 const netUrl = name => {
   const n = String(name || "").toLowerCase().trim();
@@ -1662,84 +1670,101 @@ function WatchOptions({ game, color, big }) {
 
 /* ─── FILTER BAR ──────────────────────────────────────────── */
 
-function FilterBar({ filters, setFilters }) {
-  const [open, setOpen] = useState(false);
-  const activeCount = Object.values(filters).filter(v => v !== "ALL").length;
+// Extract the city portion from a full team name ("Kansas City Chiefs" → "Kansas City").
+// Falls back to checking CITIES for a match inside the team name.
+function teamCity(teamName) {
+  if (!teamName) return "";
+  for (const city of CITIES) {
+    if (teamName.startsWith(city)) return city;
+  }
+  // Two-word cities that ESPN uses
+  const twoWord = ["New York", "Los Angeles", "San Francisco", "San Antonio", "San Diego",
+    "Kansas City", "Oklahoma City", "Salt Lake", "Green Bay", "Las Vegas", "Golden State",
+    "Tampa Bay", "New Orleans", "St. Louis", "New England"];
+  for (const c of twoWord) { if (teamName.startsWith(c)) return c; }
+  // Single-word city = first word (works for "Chicago Bears", "Dallas Cowboys", etc.)
+  const parts = teamName.split(" ");
+  return parts.length > 1 ? parts[0] : "";
+}
 
+function FilterBar({ filters, setFilters }) {
+  const activeCount = Object.values(filters).filter(v => v !== "ALL").length;
   const sportOpts = ["ALL", ...Object.keys(LEAGUE_COLORS)];
   const teamOpts = filters.sport === "ALL"
-    ? ["ALL"]
-    : ["ALL", ...(STAR_TEAMS[filters.sport] || [])];
-  const cityOpts = ["ALL", ...CITIES];
+    ? []
+    : (STAR_TEAMS[filters.sport] || []);
 
-  const Row = ({ label, value, options, onPick, accent }) => (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 7 }}>
-        {label.toUpperCase()}
-      </div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", paddingBottom: 2 }}>
-        {options.map(o => {
-          const active = value === o;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {/* Sport pills — always visible, scrollable */}
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 2 }}>
+        {sportOpts.map(lg => {
+          const active = filters.sport === lg;
           return (
-            <button key={o} onClick={() => onPick(o)} style={{
-              flexShrink: 0, padding: "7px 14px", borderRadius: 18, cursor: "pointer",
-              fontSize: 12, fontWeight: 700, fontFamily: "inherit",
-              border: `1px solid ${active ? (accent || C.red) : C.line}`,
-              background: active ? (accent || C.red) : C.surface,
-              color: active ? "#fff" : C.inkMid,
-              whiteSpace: "nowrap",
-            }}>
-              {o === "ALL" ? `All ${label}s` : o}
-            </button>
+            <button key={lg} onClick={() => setFilters(f => ({ ...f, sport: lg, team: "ALL", city: "ALL" }))} style={{
+              flexShrink: 0, padding: "6px 13px", borderRadius: 16, cursor: "pointer",
+              background: active ? (LEAGUE_COLORS[lg] || C.red) : C.surface,
+              color: active ? "#fff" : C.inkDim, fontSize: 12, fontWeight: 700,
+              border: `1px solid ${active ? (LEAGUE_COLORS[lg] || C.red) : C.line}`,
+              fontFamily: "inherit", whiteSpace: "nowrap",
+            }}>{lg === "ALL" ? "All Sports" : `${SPORT_EMOJI[lg] || ""} ${leagueLabel(lg)}`}</button>
           );
         })}
       </div>
-    </div>
-  );
 
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <button onClick={() => setOpen(!open)} style={{
-        display: "inline-flex", alignItems: "center", gap: 8,
-        background: activeCount ? C.redSoft : C.surface,
-        border: `1px solid ${activeCount ? C.red : C.line}`,
-        borderRadius: 20, padding: "8px 16px", cursor: "pointer",
-        fontSize: 13, fontWeight: 700, fontFamily: "inherit",
-        color: activeCount ? C.red : C.inkMid,
-      }}>
-        <span>⚙ Filters</span>
-        {activeCount > 0 && (
-          <span style={{
-            background: C.red, color: "#fff", borderRadius: "50%",
-            width: 18, height: 18, fontSize: 10, fontWeight: 800,
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>{activeCount}</span>
-        )}
-        <span style={{ fontSize: 11, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▾</span>
-      </button>
-
-      {open && (
-        <div style={{
-          marginTop: 12, background: C.surface, border: `1px solid ${C.line}`,
-          borderRadius: 12, padding: "16px 16px 10px",
-          boxShadow: "0 4px 16px rgba(20,32,43,0.06)",
-        }}>
-          <Row label="Sport" value={filters.sport} options={sportOpts}
-            accent={filters.sport !== "ALL" ? LEAGUE_COLORS[filters.sport] : C.red}
-            onPick={v => setFilters(f => ({ ...f, sport: v, team: "ALL" }))} />
-          <Row label="Team" value={filters.team} options={teamOpts}
-            accent="#1D5BBF"
-            onPick={v => setFilters(f => ({ ...f, team: v }))} />
-          <Row label="City" value={filters.city} options={cityOpts}
-            accent="#1F7A4D"
-            onPick={v => setFilters(f => ({ ...f, city: v }))} />
-          {activeCount > 0 && (
-            <button onClick={() => setFilters({ sport: "ALL", team: "ALL", city: "ALL" })} style={{
-              background: "none", border: "none", cursor: "pointer", padding: 0,
-              fontSize: 12, fontWeight: 700, color: C.inkFaint, fontFamily: "inherit",
-            }}>✕ Clear all filters</button>
-          )}
+      {/* Team pills — appear when a sport is selected, scrollable with logos */}
+      {teamOpts.length > 0 && (
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 2 }}>
+          <button onClick={() => setFilters(f => ({ ...f, team: "ALL" }))} style={{
+            flexShrink: 0, padding: "5px 11px", borderRadius: 14, cursor: "pointer",
+            background: filters.team === "ALL" ? C.ink : C.surface,
+            color: filters.team === "ALL" ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 700,
+            border: `1px solid ${filters.team === "ALL" ? C.ink : C.line}`,
+            fontFamily: "inherit", whiteSpace: "nowrap",
+          }}>All teams</button>
+          {teamOpts.map(t => {
+            const active = filters.team === t;
+            return (
+              <button key={t} onClick={() => setFilters(f => ({ ...f, team: t }))} style={{
+                flexShrink: 0, padding: "4px 11px 4px 5px", borderRadius: 14, cursor: "pointer",
+                background: active ? C.ink : C.surface,
+                color: active ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 700,
+                border: `1px solid ${active ? C.ink : C.line}`,
+                fontFamily: "inherit", whiteSpace: "nowrap",
+                display: "inline-flex", alignItems: "center", gap: 5,
+              }}>
+                <TeamLogo team={t} size={20} />
+                {t}
+              </button>
+            );
+          })}
         </div>
+      )}
+
+      {/* City pills — always available as a secondary filter */}
+      {filters.sport !== "ALL" && (
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 2 }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: C.inkFaint, letterSpacing: "0.1em", flexShrink: 0, alignSelf: "center", marginRight: 4 }}>CITY</span>
+          {["ALL", ...CITIES].map(c => {
+            const active = filters.city === c;
+            return (
+              <button key={c} onClick={() => setFilters(f => ({ ...f, city: c }))} style={{
+                flexShrink: 0, padding: "4px 10px", borderRadius: 12, cursor: "pointer",
+                background: active ? "#1F7A4D" : C.surface,
+                color: active ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 600,
+                border: `1px solid ${active ? "#1F7A4D" : C.line}`,
+                fontFamily: "inherit", whiteSpace: "nowrap",
+              }}>{c === "ALL" ? "Any" : c}</button>
+            );
+          })}
+        </div>
+      )}
+
+      {activeCount > 0 && (
+        <button onClick={() => setFilters({ sport: "ALL", team: "ALL", city: "ALL" })} style={{
+          background: "none", border: "none", cursor: "pointer", padding: "2px 0",
+          fontSize: 11, fontWeight: 700, color: C.inkFaint, fontFamily: "inherit",
+        }}>✕ Clear filters</button>
       )}
     </div>
   );
@@ -1901,11 +1926,46 @@ function MatchupBreakdown({ game }) {
 
 /* ─── GAME CARD ───────────────────────────────────────────── */
 
-function GameCard({ game, alertOn, onAlert }) {
+function GameCard({ game, alertOn, onAlert, compact }) {
   const lc = LEAGUE_COLORS[game.league];
   const isLive = game.status === "live";
   const isFinal = game.status === "post";
   const hasScore = (isLive || isFinal) && game.score;
+  // Compact mode for verdict <= 4 in the "rest of slate" — smaller type, no summary/tagline,
+  // collapsed watch options. "Must watch" (5) and live games always get the full treatment.
+  const slim = compact && !isLive && game.verdict < 5;
+  const [expanded, setExpanded] = useState(false);
+
+  if (slim && !expanded) {
+    return (
+      <div onClick={() => setExpanded(true)} style={{
+        display: "flex", background: C.surface, borderRadius: 10, overflow: "hidden", marginBottom: 8,
+        border: `1px solid ${C.line}`, cursor: "pointer",
+        boxShadow: "0 1px 4px rgba(20,32,43,0.03)",
+      }}>
+        <div style={{ width: 4, background: lc, flexShrink: 0 }} />
+        <div style={{ flex: 1, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <VerdictDot level={game.verdict} />
+          <LeaguePill league={game.league} small />
+          <div style={{ display: "flex", alignItems: "center", gap: 5, flex: 1, minWidth: 0 }}>
+            <TeamLogo team={game.away} size={20} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {game.awayRank ? `#${game.awayRank} ` : ""}{game.away}
+            </span>
+            <span style={{ color: C.inkFaint, fontSize: 11 }}>{game.atWord || "at"}</span>
+            <TeamLogo team={game.home} size={20} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {game.homeRank ? `#${game.homeRank} ` : ""}{game.home}
+            </span>
+          </div>
+          <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{game.time}</span>
+          {game.channel && <span style={{ fontSize: 10, color: C.inkDim, fontWeight: 600, flexShrink: 0 }}>{game.channel}</span>}
+          <span style={{ fontSize: 12, color: C.inkFaint, flexShrink: 0 }}>›</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{
       display: "flex", background: C.surface, borderRadius: 11, overflow: "hidden", marginBottom: 11,
@@ -1954,9 +2014,10 @@ function GameCard({ game, alertOn, onAlert }) {
           </div>
         )}
 
-        <div style={{ fontSize: 13, color: lc, fontWeight: 700, marginBottom: 6 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>
+        {game.verdict >= 5 && (
+          <div style={{ fontSize: 13, color: lc, fontWeight: 700, marginBottom: 6 }}>{SPORT_EMOJI[game.league]} {game.tagline}</div>
+        )}
 
-        {/* How good is this game, and why — shown on every card, not just the hero. */}
         <VerdictLine level={game.verdict} why={game.verdictWhy} />
 
         {(game.awayRecord || game.homeRecord) && (
@@ -1965,7 +2026,9 @@ function GameCard({ game, alertOn, onAlert }) {
           </div>
         )}
 
-        <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, margin: "0 0 12px" }}>{game.summary}</p>
+        {(game.verdict >= 5 || isLive) && game.summary && (
+          <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, margin: "0 0 12px" }}>{game.summary}</p>
+        )}
 
         {!isLive && <MatchupBreakdown game={game} />}
         <TeamLinks game={game} />
@@ -1981,6 +2044,12 @@ function GameCard({ game, alertOn, onAlert }) {
             fontSize: 12, fontWeight: 600, fontFamily: "inherit",
           }}>{alertOn ? "🔔 Alert set" : "🔕 Alert me"}</button>
         </div>
+        {expanded && (
+          <button onClick={e => { e.stopPropagation(); setExpanded(false); }} style={{
+            background: "none", border: "none", color: C.inkFaint, cursor: "pointer",
+            fontSize: 12, fontWeight: 700, fontFamily: "inherit", padding: "6px 0 0",
+          }}>▴ Show less</button>
+        )}
       </div>
     </div>
   );
@@ -5372,7 +5441,7 @@ export default function App() {
   const matches = g =>
     (filters.sport === "ALL" || g.league === filters.sport) &&
     (filters.team === "ALL" || g.home === filters.team || g.away === filters.team) &&
-    (filters.city === "ALL" || g.city === filters.city);
+    (filters.city === "ALL" || g.city === filters.city || teamCity(g.home) === filters.city || teamCity(g.away) === filters.city);
 
   // Live schedule for today (WNBA + MLB). World Cup stays curated.
   const { liveEvents: appLiveEvents, status: appLiveStatus } = useLiveSchedule();
@@ -5561,7 +5630,7 @@ export default function App() {
             )}
             <div>
               {(hero || live.length > 0) && <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", color: C.inkFaint, marginBottom: 12 }}>REST OF THE SLATE</div>}
-              {rest.length ? rest.map(g => <GameCard key={g.id} game={g} alertOn={gameAlerts.includes(g.id)} onAlert={toggleGameAlert} />)
+              {rest.length ? rest.map(g => <GameCard key={g.id} game={g} alertOn={gameAlerts.includes(g.id)} onAlert={toggleGameAlert} compact />)
                 : !hero && live.length === 0 && otherGames.length === 0 && (
                   <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 32, textAlign: "center", color: C.inkDim, fontSize: 14 }}>
                     No games match your filters. <span onClick={() => setFilters({sport:"ALL",team:"ALL",city:"ALL"})} style={{ color: C.red, fontWeight: 700, cursor: "pointer" }}>Clear filters</span>
@@ -5586,6 +5655,30 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* Verdict legend — explains the color-coded rating system */}
+            <div style={{
+              marginTop: 28, padding: "14px 16px", background: C.surface,
+              border: `1px solid ${C.line}`, borderRadius: 10,
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint, marginBottom: 10 }}>
+                HOW WE RATE GAMES
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+                {VERDICT_TIERS.map(tier => {
+                  const v = VERDICT[tier];
+                  return (
+                    <div key={tier} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 2, background: v.dot, flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, fontWeight: 700, color: C.inkMid }}>{v.short}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11, color: C.inkFaint, lineHeight: 1.5, marginTop: 8 }}>
+                Based on team records, rankings, TV placement, betting lines, and playoff stakes.
+              </div>
+            </div>
 
             <InstallPrompt compact />
           </>
