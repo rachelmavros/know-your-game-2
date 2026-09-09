@@ -4,3 +4,4 @@ package-lock.json
 .vercel
 .DS_Store
 *.local
+.claude/
