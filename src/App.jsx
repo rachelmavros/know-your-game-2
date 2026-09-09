@@ -423,7 +423,7 @@ function useLiveSchedule() {
             score: g.homeScore != null ? { [g.homeAbbr]: g.homeScore, [g.awayAbbr]: g.awayScore } : null,
             channel: g.network || "", tagline: label,
             note: label, fromApi: true,
-            round: g.round || "", resultText: g.resultText || "", tour: g.tour || "",
+            round: g.round || "", resultText: g.resultText || "", tour: g.tour || "", setScore: g.setScore || "",
           });
         }));
         // Overlay live scores + status onto WNBA/MLB games from BallDontLie.
@@ -1952,16 +1952,23 @@ function GameCard({ game, alertOn, onAlert, compact }) {
   const isLive = game.status === "live";
   const isFinal = game.status === "post";
   const hasScore = (isLive || isFinal) && game.score;
-  // Compact mode for verdict <= 4 in the "rest of slate" — smaller type, no summary/tagline,
-  // collapsed watch options. "Must watch" (5) and live games always get the full treatment.
-  const slim = compact && !isLive && game.verdict < 5;
+  // Tennis has no team score object — a running set score ("6-4, 3-6, 4-2")
+  // or ESPN's own finished-match summary stands in for it.
+  const isTennis = game.league === "USO";
+  const tennisScore = isTennis ? (game.setScore || game.resultText) : "";
+  // Compact mode for verdict <= 4 — smaller type, no summary/tagline, collapsed
+  // watch options. Only "must watch" (5) always gets the full-size treatment;
+  // everything else condenses, live games included, so a full slate of lower-
+  // stakes games doesn't eat the whole screen.
+  const slim = compact && game.verdict < 5;
   const [expanded, setExpanded] = useState(false);
 
   if (slim && !expanded) {
+    const liveBit = isTennis ? (tennisScore || "LIVE") : (game.score ? `${game.score[game.awayAbbr]}-${game.score[game.homeAbbr]}` : "LIVE");
     return (
       <div onClick={() => setExpanded(true)} style={{
         display: "flex", background: C.surface, borderRadius: 10, overflow: "hidden", marginBottom: 8,
-        border: `1px solid ${C.line}`, cursor: "pointer",
+        border: `1px solid ${isLive ? "#C8102E40" : C.line}`, cursor: "pointer",
         boxShadow: "0 1px 4px rgba(20,32,43,0.03)",
       }}>
         <div style={{ width: 4, background: lc, flexShrink: 0 }} />
@@ -1979,7 +1986,14 @@ function GameCard({ game, alertOn, onAlert, compact }) {
               {game.homeRank ? `#${game.homeRank} ` : ""}{game.home}
             </span>
           </div>
-          <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{game.time}</span>
+          {isLive ? (
+            <span style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "pulse 1.4s infinite" }} />
+              <span style={{ fontSize: 11, fontWeight: 800, color: C.red }}>{liveBit}</span>
+            </span>
+          ) : (
+            <span style={{ fontSize: 11, color: C.inkFaint, flexShrink: 0 }}>{game.time}</span>
+          )}
           {game.channel && <span style={{ fontSize: 10, color: C.inkDim, fontWeight: 600, flexShrink: 0 }}>{game.channel}</span>}
           <span style={{ fontSize: 12, color: C.inkFaint, flexShrink: 0 }}>›</span>
         </div>
@@ -2020,6 +2034,21 @@ function GameCard({ game, alertOn, onAlert, compact }) {
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <span style={{ color: isLive ? C.red : C.ink }}>{game.score[game.homeAbbr]}</span> {game.homeAbbr || game.home}<TeamLogo team={game.home} size={22} />
             </span>
+          </div>
+        ) : isTennis && (isLive || isFinal) && tennisScore ? (
+          <div style={{ marginBottom: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <TeamLogo team={game.away} size={22} />
+                <span style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{game.away}</span>
+              </span>
+              <span style={{ color: C.inkFaint, fontSize: 13, fontWeight: 400 }}>vs</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <TeamLogo team={game.home} size={22} />
+                <span style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{game.home}</span>
+              </span>
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: isLive ? C.red : C.ink, marginTop: 4 }}>{tennisScore}</div>
           </div>
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
@@ -5550,6 +5579,7 @@ export default function App() {
       homeRank: e.homeRank, awayRank: e.awayRank, atWord: e.atWord,
       tagline: e.tagline || "", summary: e.summary || e.note || "",
       channel: e.channel || "", channelUrl: "",
+      round: e.round || "", resultText: e.resultText || "", tour: e.tour || "", setScore: e.setScore || "",
       fromApi: true,
     }));
 
@@ -5564,7 +5594,10 @@ export default function App() {
   });
   const visible = allToday.filter(matches);
   let hero = visible.find(g => g.featured && g.dateKey === todayK);
-  const live = visible.filter(g => g.status === "live" && g.dateKey === todayK);
+  // Must-watch games lead even within "happening now" — a live US Open
+  // semifinal shouldn't be buried under a stack of live baseball.
+  const live = visible.filter(g => g.status === "live" && g.dateKey === todayK)
+    .sort((a,b) => (b.verdict-a.verdict) || (sportPriority(a.league)-sportPriority(b.league)));
   const todayNonHero = visible.filter(g => g.dateKey === todayK && g !== hero && g.status !== "live");
 
   // If no curated Editor's Pick exists for today, promote the highest-verdict
@@ -5690,7 +5723,7 @@ export default function App() {
             {live.length > 0 && (
               <div style={{ marginBottom: 22 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", color: C.red, marginBottom: 12 }}>● HAPPENING NOW</div>
-                {live.map(g => <GameCard key={g.id} game={g} alertOn={gameAlerts.includes(g.id)} onAlert={toggleGameAlert} />)}
+                {live.map(g => <GameCard key={g.id} game={g} alertOn={gameAlerts.includes(g.id)} onAlert={toggleGameAlert} compact />)}
               </div>
             )}
             <div>

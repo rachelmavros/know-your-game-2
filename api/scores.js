@@ -52,14 +52,24 @@ async function fetchUsOpen(startKey, endKey) {
           const maxSets = comp.format && comp.format.regulation && comp.format.regulation.periods;
           const { verdict, reasons } = scoreTennisMatch(roundName, network, cs, maxSets);
           // notes[0].text is ESPN's own human summary ("X bt Y 7-6 6-3") — far
-          // better than us reconstructing a set score from linescores.
+          // better than us reconstructing a set score from linescores. Used once
+          // the match is final; while live we build the running set score below.
           const resultText = (comp.notes && comp.notes[0] && comp.notes[0].text) || '';
+          // Live/in-progress set score, e.g. "6-4, 3-6, 4-2" — ESPN gives each
+          // competitor's own linescores array (one entry per set played/in progress).
+          const hSets = H.linescores || [], aSets = A.linescores || [];
+          const setCount = Math.max(hSets.length, aSets.length);
+          const setScore = setCount
+            ? Array.from({ length: setCount }, (_, i) =>
+                `${hSets[i] && hSets[i].value != null ? hSets[i].value : '-'}-${aSets[i] && aSets[i].value != null ? aSets[i].value : '-'}`)
+              .join(', ')
+            : '';
           games.push({
             league: 'USO', home: H.athlete.displayName, away: A.athlete.displayName,
             homeAbbr: H.athlete.shortName || '', awayAbbr: A.athlete.shortName || '',
             dateKey, time,
             state: st.state || 'pre', detail: (roundName || '') + (st.shortDetail ? ` · ${st.shortDetail}` : ''),
-            homeScore: null, awayScore: null,
+            homeScore: null, awayScore: null, setScore,
             network, isNationalTv: isNationalTv(network),
             verdict, verdictWhy: reasons,
             homeRank: null, awayRank: null, homeRecord: '', awayRecord: '',
