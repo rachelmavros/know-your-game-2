@@ -518,7 +518,7 @@ const LEAGUE_SPORT = { WNBA:"Basketball", NBA:"Basketball", MLB:"Baseball", NFL:
 // acronyms; kept short enough to fit a scrollable pill, with the fuller
 // "Women's College Volleyball" / "FIBA Women's World Cup" spelled out wherever
 // there's room (Standings header, Sports 101, blurbs).
-const LEAGUE_LABEL = { CFB: "College Football", WVB: "College Volleyball", FIBA: "Women's World Cup", USO: "US Open" };
+const LEAGUE_LABEL = { CFB: "College Football", WVB: "College Volleyball", FIBA: "Women's World Cup", USO: "US Open", EPL: "Premier League" };
 const leagueLabel = lg => LEAGUE_LABEL[lg] || lg;
 
 // The verdict scale. `bg`/`text` style the badge; `dot` is the swatch used in
@@ -870,6 +870,18 @@ function seasonStatus(league, todayK) {
     sortKey: started ? 1000 - pct : 2000 + Math.max(0, startN - t),
     milestones: ms,
   };
+}
+
+// Season-aware priority for ordering sport pills/filters everywhere: leagues
+// playing right now, and further along into their season/tournament, sort
+// first (a low sortKey wins). Leagues with no tracked season context (NHL,
+// MLS, WC) fall to the back since we can't say how "live" they are.
+function sportPriority(lg) {
+  const st = seasonStatus(lg, todayKey());
+  return st ? st.sortKey : 5000;
+}
+function sortLeaguesByPriority(list) {
+  return [...list].sort((a, b) => sportPriority(a) - sportPriority(b));
 }
 
 // Sport emoji per league — used on headlines everywhere
@@ -1690,7 +1702,7 @@ function teamCity(teamName) {
 function FilterBar({ filters, setFilters }) {
   const [showTeamGrid, setShowTeamGrid] = useState(false);
   const activeCount = Object.values(filters).filter(v => v !== "ALL").length;
-  const sportOpts = ["ALL", ...Object.keys(LEAGUE_COLORS)];
+  const sportOpts = ["ALL", ...sortLeaguesByPriority(Object.keys(LEAGUE_COLORS))];
   const lc = LEAGUE_COLORS[filters.sport] || C.red;
   const teamOpts = filters.sport === "ALL"
     ? []
@@ -1698,12 +1710,12 @@ function FilterBar({ filters, setFilters }) {
 
   return (
     <div style={{ marginBottom: 16 }}>
-      {/* Sport pills — always visible, scrollable */}
+      {/* Sport pills — always visible, scrollable, in-season sports first */}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 2 }}>
         {sportOpts.map(lg => {
           const active = filters.sport === lg;
           return (
-            <button key={lg} onClick={() => { setFilters(f => ({ ...f, sport: lg, team: "ALL", city: "ALL" })); setShowTeamGrid(false); }} style={{
+            <button key={lg} onClick={() => { setFilters(f => ({ ...f, sport: lg, team: "ALL" })); setShowTeamGrid(lg !== "ALL"); }} style={{
               flexShrink: 0, padding: "6px 13px", borderRadius: 16, cursor: "pointer",
               background: active ? (LEAGUE_COLORS[lg] || C.red) : C.surface,
               color: active ? "#fff" : C.inkDim, fontSize: 12, fontWeight: 700,
@@ -1714,7 +1726,25 @@ function FilterBar({ filters, setFilters }) {
         })}
       </div>
 
-      {/* Team filter — "All Teams" pill + selected team + "Browse teams" grid (matches Players tab) */}
+      {/* City filter — its own always-visible top-level row */}
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 2 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: C.inkFaint, letterSpacing: "0.1em", flexShrink: 0, alignSelf: "center", marginRight: 2 }}>CITY</span>
+        {["ALL", ...CITIES].map(c => {
+          const active = filters.city === c;
+          return (
+            <button key={c} onClick={() => setFilters(f => ({ ...f, city: c }))} style={{
+              flexShrink: 0, padding: "5px 11px", borderRadius: 12, cursor: "pointer",
+              background: active ? "#1F7A4D" : C.surface,
+              color: active ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 600,
+              border: `1px solid ${active ? "#1F7A4D" : C.line}`,
+              fontFamily: "inherit", whiteSpace: "nowrap",
+            }}>{c === "ALL" ? "Any" : c}</button>
+          );
+        })}
+      </div>
+
+      {/* Team filter — "All Teams" pill + selected team + browse grid, opens
+          immediately once a sport is picked (matches Players tab) */}
       {teamOpts.length > 0 && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: showTeamGrid ? 10 : 0 }}>
@@ -1733,12 +1763,6 @@ function FilterBar({ filters, setFilters }) {
               display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 16, cursor: "pointer",
               background: "transparent", color: C.inkDim, fontSize: 12, fontWeight: 700, fontFamily: "inherit", border: `1px solid ${C.line}`,
             }}>⊞ {showTeamGrid ? "Hide teams" : "Browse teams"}</button>
-            {filters.city !== "ALL" && (
-              <span style={{
-                display: "inline-flex", alignItems: "center", gap: 4, padding: "6px 10px", borderRadius: 16,
-                background: "#1F7A4D18", color: "#1F7A4D", fontSize: 11, fontWeight: 700, border: "1px solid #1F7A4D",
-              }}>📍 {filters.city} <span onClick={() => setFilters(f => ({ ...f, city: "ALL" }))} style={{ cursor: "pointer", marginLeft: 2 }}>✕</span></span>
-            )}
           </div>
 
           {showTeamGrid && (
@@ -1752,25 +1776,6 @@ function FilterBar({ filters, setFilters }) {
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t}</span>
                 </button>
               ))}
-            </div>
-          )}
-
-          {/* City filter row */}
-          {!showTeamGrid && (
-            <div style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 8, paddingBottom: 2 }}>
-              <span style={{ fontSize: 10, fontWeight: 800, color: C.inkFaint, letterSpacing: "0.1em", flexShrink: 0, alignSelf: "center", marginRight: 2 }}>CITY</span>
-              {["ALL", ...CITIES].map(c => {
-                const active = filters.city === c;
-                return (
-                  <button key={c} onClick={() => setFilters(f => ({ ...f, city: c }))} style={{
-                    flexShrink: 0, padding: "4px 10px", borderRadius: 12, cursor: "pointer",
-                    background: active ? "#1F7A4D" : C.surface,
-                    color: active ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 600,
-                    border: `1px solid ${active ? "#1F7A4D" : C.line}`,
-                    fontFamily: "inherit", whiteSpace: "nowrap",
-                  }}>{c === "ALL" ? "Any" : c}</button>
-                );
-              })}
             </div>
           )}
         </div>
@@ -2156,7 +2161,8 @@ function CalendarTab({ alerts, onAlert }) {
   const today = todayKey();
   const [cursorMonth, setCursorMonth] = useState(() => today.slice(0, 7)); // "YYYY-MM", for month navigation
   const [selected, setSelected] = useState(today);
-  const [calFilters, setCalFilters] = useState({ sport: "ALL", team: "ALL" });
+  const [calFilters, setCalFilters] = useState({ sport: "ALL", team: "ALL", city: "ALL" });
+  const [showCalTeamGrid, setShowCalTeamGrid] = useState(false);
 
   const [cy, cm] = cursorMonth.split("-").map(Number);
   const monthDays = (() => {
@@ -2168,10 +2174,11 @@ function CalendarTab({ alerts, onAlert }) {
     return days;
   })();
 
-  // Filter calendar events by sport and (optionally) team
+  // Filter calendar events by sport, team, and (optionally) city
   const filterEvents = evs => evs.filter(e =>
     (calFilters.sport === "ALL" || e.league === calFilters.sport) &&
-    (calFilters.team === "ALL" || e.home === calFilters.team || e.away === calFilters.team));
+    (calFilters.team === "ALL" || e.home === calFilters.team || e.away === calFilters.team) &&
+    (calFilters.city === "ALL" || teamCity(e.home) === calFilters.city || teamCity(e.away) === calFilters.city));
 
   // Live schedule merged over curated highlights
   const { liveEvents, status: liveStatus, counts } = useLiveSchedule();
@@ -2212,10 +2219,10 @@ function CalendarTab({ alerts, onAlert }) {
           Live schedule connected
         </div>
       )}
-      {/* Sport filter pills */}
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, paddingBottom: 2 }}>
-        {["ALL", "WNBA", "NBA", "MLB", "CFB", "WVB", "FIBA", "USO", "NFL", "EPL", "NHL", "MLS"].map(lg => (
-          <button key={lg} onClick={() => setCalFilters({ sport: lg, team: "ALL" })} style={{
+      {/* Sport filter pills — in-season sports first */}
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 2 }}>
+        {["ALL", ...sortLeaguesByPriority(["WNBA", "NBA", "MLB", "CFB", "WVB", "FIBA", "USO", "NFL", "EPL", "NHL", "MLS"])].map(lg => (
+          <button key={lg} onClick={() => { setCalFilters({ sport: lg, team: "ALL", city: "ALL" }); setShowCalTeamGrid(lg !== "ALL"); }} style={{
             flexShrink: 0, padding: "6px 13px", borderRadius: 16, cursor: "pointer",
             background: calFilters.sport === lg ? (LEAGUE_COLORS[lg] || C.red) : C.surface,
             color: calFilters.sport === lg ? "#fff" : C.inkDim, fontSize: 12, fontWeight: 700,
@@ -2225,18 +2232,56 @@ function CalendarTab({ alerts, onAlert }) {
         ))}
       </div>
 
-      {/* Team filter — appears once a sport is picked */}
+      {/* City filter — always-visible top-level row */}
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, paddingBottom: 2 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: C.inkFaint, letterSpacing: "0.1em", flexShrink: 0, alignSelf: "center", marginRight: 2 }}>CITY</span>
+        {["ALL", ...CITIES].map(c => (
+          <button key={c} onClick={() => setCalFilters(f => ({ ...f, city: c }))} style={{
+            flexShrink: 0, padding: "5px 11px", borderRadius: 12, cursor: "pointer",
+            background: calFilters.city === c ? "#1F7A4D" : C.surface,
+            color: calFilters.city === c ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 600,
+            border: `1px solid ${calFilters.city === c ? "#1F7A4D" : C.line}`,
+            fontFamily: "inherit",
+          }}>{c === "ALL" ? "Any" : c}</button>
+        ))}
+      </div>
+
+      {/* Team filter — All Teams + selected + browse grid, opens immediately once a sport is picked */}
       {teamsForSport.length > 0 && (
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, paddingBottom: 2 }}>
-          {["ALL", ...teamsForSport].map(t => (
-            <button key={t} onClick={() => setCalFilters(f => ({ ...f, team: t }))} style={{
-              flexShrink: 0, padding: "5px 11px", borderRadius: 14, cursor: "pointer",
-              background: calFilters.team === t ? C.ink : C.surface,
-              color: calFilters.team === t ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 700,
-              border: `1px solid ${calFilters.team === t ? C.ink : C.line}`,
-              fontFamily: "inherit",
-            }}>{t === "ALL" ? "All teams" : t}</button>
-          ))}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: showCalTeamGrid ? 10 : 0 }}>
+            <button onClick={() => { setCalFilters(f => ({ ...f, team: "ALL" })); setShowCalTeamGrid(false); }} style={{
+              padding: "6px 12px", borderRadius: 16, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+              background: calFilters.team === "ALL" ? (LEAGUE_COLORS[calFilters.sport] || C.ink) + "18" : "transparent",
+              color: calFilters.team === "ALL" ? (LEAGUE_COLORS[calFilters.sport] || C.ink) : C.inkFaint,
+              border: `1px solid ${calFilters.team === "ALL" ? (LEAGUE_COLORS[calFilters.sport] || C.ink) : C.line}`,
+            }}>All Teams</button>
+            {calFilters.team !== "ALL" && (
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 16,
+                background: (LEAGUE_COLORS[calFilters.sport] || C.ink) + "18", color: LEAGUE_COLORS[calFilters.sport] || C.ink,
+                fontSize: 12, fontWeight: 700, border: `1px solid ${LEAGUE_COLORS[calFilters.sport] || C.ink}`,
+              }}><TeamLogo team={calFilters.team} size={14} />{calFilters.team}</span>
+            )}
+            <button onClick={() => setShowCalTeamGrid(v => !v)} style={{
+              display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 16, cursor: "pointer",
+              background: "transparent", color: C.inkDim, fontSize: 12, fontWeight: 700, fontFamily: "inherit", border: `1px solid ${C.line}`,
+            }}>⊞ {showCalTeamGrid ? "Hide teams" : "Browse teams"}</button>
+          </div>
+          {showCalTeamGrid && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
+              {teamsForSport.map(t => (
+                <button key={t} onClick={() => { setCalFilters(f => ({ ...f, team: t })); setShowCalTeamGrid(false); }} style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", cursor: "pointer",
+                  background: C.surface, border: `1px solid ${calFilters.team === t ? (LEAGUE_COLORS[calFilters.sport] || C.ink) : C.line}`,
+                  borderRadius: 10, fontFamily: "inherit", textAlign: "left",
+                }}>
+                  <TeamLogo team={t} size={22} />
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -3574,7 +3619,7 @@ const BIG_EVENTS = [
 ];
 
 function NewsTab() {
-  const leagues = ["WNBA", "NBA", "MLB", "NFL", "CFB", "WVB", "FIBA", "USO", "EPL", "NHL"];
+  const leagues = sortLeaguesByPriority(["WNBA", "NBA", "MLB", "NFL", "CFB", "WVB", "FIBA", "USO", "EPL", "NHL"]);
   const [league, setLeague] = useState("WNBA");
   const [articles, setArticles] = useState(null); // null = loading
   useEffect(() => {
@@ -3695,7 +3740,7 @@ function EventsTab() {
     })
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
-  const leaguesPresent = [...new Set(merged.map(e => e.league))];
+  const leaguesPresent = sortLeaguesByPriority([...new Set(merged.map(e => e.league))]);
   const upcoming = merged.filter(e => filter === "ALL" || e.league === filter);
 
   // Days until an event, for the countdown chip.
@@ -3731,7 +3776,7 @@ function EventsTab() {
             background: filter === lg ? (LEAGUE_COLORS[lg] || C.ink) : "transparent",
             color: filter === lg ? "#fff" : C.inkFaint, fontSize: 12, fontWeight: 700, fontFamily: "inherit",
             border: `1px solid ${filter === lg ? (LEAGUE_COLORS[lg] || C.ink) : C.line}`,
-          }}>{lg === "ALL" ? "All" : `${SPORT_EMOJI[lg] || ""} ${lg}`}</button>
+          }}>{lg === "ALL" ? "All" : `${SPORT_EMOJI[lg] || ""} ${leagueLabel(lg)}`}</button>
         ))}
       </div>
 
@@ -3826,7 +3871,7 @@ function Chip({ bg, label, title }) {
 const STANDINGS_UPDATED = "July 15, 2026 · 9:00 AM CT";
 
 function StandingsTab() {
-  const leagues = ["WNBA", "NBA", "MLB", "NFL", "CFB", "WVB", "FIBA", "USO", "EPL", "MLS", "NHL"];
+  const leagues = sortLeaguesByPriority(["WNBA", "NBA", "MLB", "NFL", "CFB", "WVB", "FIBA", "USO", "EPL", "MLS", "NHL"]);
   const [view, setView] = useState("WNBA");
   const [tennisTour, setTennisTour] = useState("atp"); // ATP (men) / WTA (women) sub-toggle for US Open rankings
   const lc = LEAGUE_COLORS[view];
@@ -5525,9 +5570,13 @@ export default function App() {
   // If no curated Editor's Pick exists for today, promote the highest-verdict
   // game (live or curated) so the Today tab always has a hero.
   if (!hero) {
+    // Tie-break by season priority: when two games rate the same verdict, the
+    // league that's furthest into its season/tournament right now (e.g. a US
+    // Open semifinal) should win the hero slot over an early-season league
+    // (e.g. Week 1 college volleyball), not whichever happened to load first.
     const candidates = visible
       .filter(g => g.dateKey === todayK && g.status !== "live")
-      .sort((a,b) => b.verdict - a.verdict);
+      .sort((a,b) => (b.verdict - a.verdict) || (sportPriority(a.league) - sportPriority(b.league)));
     hero = candidates[0] || null;
   }
   // Notification deep-link: if we arrived via /?league=&home=&away=, make that
@@ -5545,8 +5594,8 @@ export default function App() {
   // Everything else (filler live games, low-stakes) goes to the condensed,
   // expandable "every other game" section so every game is still accounted for.
   const isNotable = g => g.verdict >= 4 || (!g.fromApi && g.verdict >= 3);
-  const rest = restPool.filter(isNotable).sort((a,b)=>b.verdict-a.verdict);
-  const otherGames = restPool.filter(g => !isNotable(g)).sort((a,b)=>b.verdict-a.verdict);
+  const rest = restPool.filter(isNotable).sort((a,b)=>(b.verdict-a.verdict) || (sportPriority(a.league)-sportPriority(b.league)));
+  const otherGames = restPool.filter(g => !isNotable(g)).sort((a,b)=>(b.verdict-a.verdict) || (sportPriority(a.league)-sportPriority(b.league)));
 
   const starCount = (stars.leagues?.length||0) + (stars.teams?.length||0);
   const alertCount = gameAlerts.length + calAlerts.length;
