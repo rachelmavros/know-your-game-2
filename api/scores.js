@@ -103,7 +103,10 @@ export default async function handler(req, res) {
 
   const start = String(req.query.start || '').replace(/-/g, '');
   const end = String(req.query.end || '').replace(/-/g, '');
-  const dates = start ? (end && end !== start ? `${start}-${end}` : start) : '';
+  // ESPN's football endpoints (NFL, CFB) reject date-range queries (400).
+  // Use no-date default (returns current week) for those leagues.
+  const isFootball = league === 'NFL' || league === 'CFB';
+  const dates = isFootball ? '' : (start ? (end && end !== start ? `${start}-${end}` : start) : '');
 
   try {
     const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard${dates ? `?dates=${dates}&limit=400` : ''}`;
