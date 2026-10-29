@@ -384,6 +384,9 @@ function useLiveSchedule() {
         { lg: "FIBA", back: 3, fwd: 14, blurb: "FIBA Women's World Cup", atWord: "vs" },
         { lg: "USO",  back: 2, fwd: 14, blurb: "US Open",                atWord: "vs" },
         { lg: "NFL",  back: 2, fwd: 14, blurb: "NFL",                    atWord: "at" },
+        { lg: "NBA",  back: 2, fwd: 14, blurb: "NBA",                    atWord: "at" },
+        { lg: "NHL",  back: 2, fwd: 14, blurb: "NHL",                    atWord: "at" },
+        { lg: "MLS",  back: 3, fwd: 21, blurb: "MLS",                    atWord: "vs" },
       ];
       const [espnSets, wnbaScores, mlbScores] = await Promise.all([
         Promise.all(ESPN_LEAGUES.map(c => scoresFor(c.lg, addDays(today, -c.back), addDays(today, c.fwd)))),
@@ -391,6 +394,9 @@ function useLiveSchedule() {
         scoresFor("MLB", addDays(today, -2), addDays(today, 2)),
       ]);
       const espnGames = espnSets.flat();
+      // ESPN hands back each team's crest — register them so NBA/NHL/NFL/etc.
+      // show real logos instead of monogram discs.
+      registerLogos([...espnGames, ...wnbaScores, ...mlbScores].flatMap(g => [[g.home, g.homeLogo], [g.away, g.awayLogo]]));
       if (!cancelled) {
         ESPN_LEAGUES.forEach((cfg, i) => (espnSets[i] || []).forEach(g => {
           if (!g.dateKey || !g.home || !g.away) return;
@@ -1734,91 +1740,118 @@ function teamCity(teamName) {
   return parts.length > 1 ? parts[0] : "";
 }
 
-function FilterBar({ filters, setFilters }) {
-  const [showTeamGrid, setShowTeamGrid] = useState(false);
+// One filter dropdown — a pill-shaped button showing the current pick, which
+// opens a menu of options (each with its own icon) below it. Closes on an
+// outside tap or Escape.
+function FilterDropdown({ label, value, options, onChange, accent, minWidth = 220 }) {
+  const [open, setOpen] = useState(false);
+  const [alignRight, setAlignRight] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = e => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const cur = options.find(o => o.value === value) || options[0];
+  const active = value !== "ALL";
+
+  return (
+    <div ref={ref} style={{ position: "relative", flex: "1 1 150px", minWidth: 0 }}>
+      <button onClick={() => {
+        // Open the menu toward whichever side has room, so it never runs off-screen.
+        const r = ref.current && ref.current.getBoundingClientRect();
+        if (r) setAlignRight(r.left + Math.min(minWidth, window.innerWidth * 0.92) > window.innerWidth - 8);
+        setOpen(o => !o);
+      }} aria-expanded={open} style={{
+        width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
+        borderRadius: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+        background: active ? accent + "12" : C.surface,
+        border: `1px solid ${active || open ? accent : C.line}`,
+        boxShadow: open ? `0 0 0 3px ${accent}22` : "0 1px 3px rgba(20,32,43,0.05)",
+      }}>
+        {cur.icon && <span style={{ display: "inline-flex", flexShrink: 0 }}>{cur.icon}</span>}
+        <span style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
+          <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", color: C.inkFaint }}>{label}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: active ? accent : C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cur.label}</span>
+        </span>
+        <span style={{ fontSize: 10, color: C.inkFaint, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}>▼</span>
+      </button>
+
+      {open && (
+        <div role="listbox" style={{
+          position: "absolute", top: "calc(100% + 6px)", [alignRight ? "right" : "left"]: 0, zIndex: 30,
+          width: "max-content", minWidth: `max(100%, min(${minWidth}px, 92vw))`, maxWidth: "92vw",
+          maxHeight: 340, overflowY: "auto", background: C.surface, borderRadius: 12,
+          border: `1px solid ${C.line}`, boxShadow: "0 10px 30px rgba(20,32,43,0.16)", padding: 6,
+        }}>
+          {options.map(o => {
+            const sel = o.value === value;
+            return (
+              <button key={o.value} role="option" aria-selected={sel} onClick={() => { onChange(o.value); setOpen(false); }} style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px",
+                borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                background: sel ? accent + "14" : "transparent",
+              }}>
+                {o.icon && <span style={{ display: "inline-flex", width: 24, justifyContent: "center", flexShrink: 0 }}>{o.icon}</span>}
+                <span style={{ flex: 1, fontSize: 13, fontWeight: sel ? 800 : 600, color: sel ? accent : C.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.label}</span>
+                {o.count != null && <span style={{ fontSize: 11, fontWeight: 700, color: C.inkFaint, flexShrink: 0 }}>{o.count}</span>}
+                {sel && <span style={{ fontSize: 12, color: accent, fontWeight: 900, flexShrink: 0 }}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Home-page filters: Sport / Team / City dropdowns. Options come from the games
+// actually on today's slate (with counts), so every pick returns something.
+function FilterBar({ filters, setFilters, games = [] }) {
   const activeCount = Object.values(filters).filter(v => v !== "ALL").length;
-  const sportOpts = ["ALL", ...sortLeaguesByPriority(Object.keys(LEAGUE_COLORS))];
   const lc = LEAGUE_COLORS[filters.sport] || C.red;
-  const teamOpts = filters.sport === "ALL"
-    ? []
-    : (STAR_TEAMS[filters.sport] || []);
+  const countBy = (list, keyFn) => list.reduce((m, g) => { keyFn(g).forEach(k => { if (k) m[k] = (m[k] || 0) + 1; }); return m; }, {});
+
+  const sportCounts = countBy(games, g => [g.league]);
+  const sports = sortLeaguesByPriority(Object.keys(LEAGUE_COLORS))
+    .sort((a, b) => (sportCounts[b] ? 1 : 0) - (sportCounts[a] ? 1 : 0)); // playing today first
+  const emoji = lg => <span style={{ fontSize: 17, lineHeight: 1 }}>{SPORT_EMOJI[lg] || "🏟️"}</span>;
+  const sportOpts = [
+    { value: "ALL", label: "All sports", icon: <span style={{ fontSize: 17, lineHeight: 1 }}>🏟️</span>, count: games.length },
+    ...sports.map(lg => ({ value: lg, label: leagueLabel(lg), icon: emoji(lg), count: sportCounts[lg] || 0 })),
+  ];
+
+  const inSport = games.filter(g => filters.sport === "ALL" || g.league === filters.sport);
+  const teamCounts = countBy(inSport, g => [g.home, g.away]);
+  const teamOpts = [
+    { value: "ALL", label: "All teams", icon: <span style={{ fontSize: 17, lineHeight: 1 }}>👥</span> },
+    ...Object.keys(teamCounts).sort().map(t => ({ value: t, label: t, icon: <TeamLogo team={t} size={24} /> })),
+  ];
+  if (filters.team !== "ALL" && !teamCounts[filters.team])
+    teamOpts.push({ value: filters.team, label: filters.team, icon: <TeamLogo team={filters.team} size={24} /> });
+
+  const pin = <span style={{ fontSize: 15, lineHeight: 1 }}>📍</span>;
+  const cityOpts = [
+    { value: "ALL", label: "Any city", icon: pin },
+    ...CITIES.map(c => ({ value: c, label: c, icon: pin })),
+  ];
 
   return (
     <div style={{ marginBottom: 16 }}>
-      {/* Sport pills — always visible, scrollable, in-season sports first */}
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 2 }}>
-        {sportOpts.map(lg => {
-          const active = filters.sport === lg;
-          return (
-            <button key={lg} onClick={() => { setFilters(f => ({ ...f, sport: lg, team: "ALL", city: "ALL" })); setShowTeamGrid(lg !== "ALL"); }} style={{
-              flexShrink: 0, padding: "6px 13px", borderRadius: 16, cursor: "pointer",
-              background: active ? (LEAGUE_COLORS[lg] || C.red) : C.surface,
-              color: active ? "#fff" : C.inkDim, fontSize: 12, fontWeight: 700,
-              border: `1px solid ${active ? (LEAGUE_COLORS[lg] || C.red) : C.line}`,
-              fontFamily: "inherit", whiteSpace: "nowrap",
-            }}>{lg === "ALL" ? "All Sports" : `${SPORT_EMOJI[lg] || ""} ${leagueLabel(lg)}`}</button>
-          );
-        })}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <FilterDropdown label="SPORT" value={filters.sport} options={sportOpts} accent={lc}
+          onChange={v => setFilters(f => ({ ...f, sport: v, team: "ALL" }))} />
+        <FilterDropdown label="TEAM" value={filters.team} options={teamOpts} accent={lc} minWidth={260}
+          onChange={v => setFilters(f => ({ ...f, team: v }))} />
+        <FilterDropdown label="CITY" value={filters.city} options={cityOpts} accent="#1F7A4D" minWidth={180}
+          onChange={v => setFilters(f => ({ ...f, city: v }))} />
       </div>
-
-      {/* City filter — its own always-visible top-level row */}
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 2 }}>
-        <span style={{ fontSize: 10, fontWeight: 800, color: C.inkFaint, letterSpacing: "0.1em", flexShrink: 0, alignSelf: "center", marginRight: 2 }}>CITY</span>
-        {["ALL", ...CITIES].map(c => {
-          const active = filters.city === c;
-          return (
-            <button key={c} onClick={() => setFilters(f => ({ ...f, city: c }))} style={{
-              flexShrink: 0, padding: "5px 11px", borderRadius: 12, cursor: "pointer",
-              background: active ? "#1F7A4D" : C.surface,
-              color: active ? "#fff" : C.inkDim, fontSize: 11, fontWeight: 600,
-              border: `1px solid ${active ? "#1F7A4D" : C.line}`,
-              fontFamily: "inherit", whiteSpace: "nowrap",
-            }}>{c === "ALL" ? "Any" : c}</button>
-          );
-        })}
-      </div>
-
-      {/* Team filter — "All Teams" pill + selected team + browse grid, opens
-          immediately once a sport is picked (matches Players tab) */}
-      {teamOpts.length > 0 && (
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: showTeamGrid ? 10 : 0 }}>
-            <button onClick={() => { setFilters(f => ({ ...f, team: "ALL" })); setShowTeamGrid(false); }} style={{
-              padding: "6px 12px", borderRadius: 16, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit",
-              background: filters.team === "ALL" ? lc + "18" : "transparent", color: filters.team === "ALL" ? lc : C.inkFaint,
-              border: `1px solid ${filters.team === "ALL" ? lc : C.line}`,
-            }}>All Teams</button>
-            {filters.team !== "ALL" && (
-              <span style={{
-                display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 16,
-                background: lc + "18", color: lc, fontSize: 12, fontWeight: 700, border: `1px solid ${lc}`,
-              }}><TeamLogo team={filters.team} size={14} />{filters.team}</span>
-            )}
-            <button onClick={() => setShowTeamGrid(v => !v)} style={{
-              display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 16, cursor: "pointer",
-              background: "transparent", color: C.inkDim, fontSize: 12, fontWeight: 700, fontFamily: "inherit", border: `1px solid ${C.line}`,
-            }}>⊞ {showTeamGrid ? "Hide teams" : "Browse teams"}</button>
-          </div>
-
-          {showTeamGrid && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8, marginBottom: 8 }}>
-              {teamOpts.map(t => (
-                <button key={t} onClick={() => { setFilters(f => ({ ...f, team: t })); setShowTeamGrid(false); }} style={{
-                  display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", cursor: "pointer",
-                  background: C.surface, border: `1px solid ${filters.team === t ? lc : C.line}`, borderRadius: 10, fontFamily: "inherit", textAlign: "left",
-                }}>
-                  <TeamLogo team={t} size={22} />
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {activeCount > 0 && (
-        <button onClick={() => { setFilters({ sport: "ALL", team: "ALL", city: "ALL" }); setShowTeamGrid(false); }} style={{
-          background: "none", border: "none", cursor: "pointer", padding: "2px 0",
+        <button onClick={() => setFilters({ sport: "ALL", team: "ALL", city: "ALL" })} style={{
+          background: "none", border: "none", cursor: "pointer", padding: "8px 0 0",
           fontSize: 11, fontWeight: 700, color: C.inkFaint, fontFamily: "inherit",
         }}>✕ Clear filters</button>
       )}
@@ -5820,7 +5853,7 @@ export default function App() {
         {tab === "today" && (
           <>
             <WeekRundown liveEvents={appLiveEvents} stars={stars} />
-            <FilterBar filters={filters} setFilters={setFilters} />
+            <FilterBar filters={filters} setFilters={setFilters} games={allToday.filter(g => g.dateKey === todayK)} />
             {appLiveStatus === "done" && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, fontSize: 11, color: C.inkFaint, fontWeight: 600 }}>
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#21A35A", display: "inline-block", flexShrink: 0 }} />
