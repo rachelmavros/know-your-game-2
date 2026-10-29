@@ -1,7 +1,14 @@
-// api/notify.js — daily push job (Vercel Cron). Sends each subscriber a
-// personalized "top game today" notification based on their saved follows.
+// api/notify.js — push jobs (Vercel Cron), picked by ?kind=:
+//   (default) daily    — each subscriber's personalized "top game today"
+//   big                — game-day alert when there are playoff/finals games today
+//   week               — Monday digest of this week's playoff/finals games
+// The big/week alerts are separate from the routine daily push and only fire
+// when there's something at stake, so they never nag on a quiet day.
 
-import { setVapid, getTodayGames, pickTopGames, buildPayload, sendPush } from './_push.js';
+import {
+  setVapid, getTodayGames, pickTopGames, buildPayload, sendPush,
+  getBigGames, bigGamesFor, buildBigTodayPayload, buildBigWeekPayload, ctToday, ctAddDays,
+} from './_push.js';
 
 export default async function handler(req, res) {
   // If CRON_SECRET is set, Vercel Cron sends it as a Bearer token.
@@ -16,8 +23,27 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Missing env vars' });
   }
 
+  const kind = String(req.query.kind || 'daily');
   const wp = setVapid();
-  const games = await getTodayGames();
+
+  // Build a per-subscriber payload (or null to skip) for this kind of job.
+  let games, payloadFor;
+  if (kind === 'big' || kind === 'week') {
+    const today = ctToday();
+    games = await getBigGames(today, kind === 'week' ? ctAddDays(today, 6) : today);
+    payloadFor = sub => {
+      const mine = bigGamesFor(games, sub, kind === 'week' ? 'weeklyBig' : 'mustWatch');
+      if (!mine.length) return null;
+      return kind === 'week' ? buildBigWeekPayload(mine) : buildBigTodayPayload(mine);
+    };
+  } else {
+    games = await getTodayGames();
+    payloadFor = sub => {
+      const ranked = pickTopGames(games, sub);
+      return ranked.length ? buildPayload(ranked, games.length) : null; // no games today → don't nag
+    };
+  }
+  if (!games.length) return res.status(200).json({ kind, games: 0, sent: 0 });
 
   const subRes = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?select=*`, {
     headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
@@ -29,12 +55,12 @@ export default async function handler(req, res) {
 
   let sent = 0, removed = 0, skipped = 0;
   for (const sub of subs) {
-    const ranked = pickTopGames(games, sub);
-    if (!ranked.length) { skipped++; continue; } // no games today → don't nag
-    const result = await sendPush(wp, sub, buildPayload(ranked, games.length), supabaseUrl, supabaseKey);
+    const payload = payloadFor(sub);
+    if (!payload) { skipped++; continue; }
+    const result = await sendPush(wp, sub, payload, supabaseUrl, supabaseKey);
     if (result === 'sent') sent++;
     else if (result === 'removed') removed++;
   }
 
-  return res.status(200).json({ total: subs.length, games: games.length, sent, removed, skipped });
+  return res.status(200).json({ kind, total: subs.length, games: games.length, sent, removed, skipped });
 }

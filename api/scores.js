@@ -7,7 +7,7 @@ import { scoreCompetition, isNationalTv, scoreTennisMatch } from './_verdict.js'
 
 const LEAGUE_PATH = {
   WNBA: 'basketball/wnba', MLB: 'baseball/mlb', NBA: 'basketball/nba',
-  NFL: 'football/nfl', NHL: 'hockey/nhl', EPL: 'soccer/eng.1',
+  NFL: 'football/nfl', NHL: 'hockey/nhl', EPL: 'soccer/eng.1', MLS: 'soccer/usa.1',
   CFB: 'football/college-football',
   WVB: 'volleyball/womens-college-volleyball',
   FIBA: 'basketball/fiba', // ESPN's slug for the FIBA Women's World Cup
@@ -103,18 +103,29 @@ export default async function handler(req, res) {
 
   const start = String(req.query.start || '').replace(/-/g, '');
   const end = String(req.query.end || '').replace(/-/g, '');
-  // ESPN's football endpoints (NFL, CFB) reject date-range queries (400).
-  // Use no-date default (returns current week) for those leagues.
+  // ESPN's football endpoints (NFL, CFB) reject date-range queries (400), and
+  // the no-date default only returns the current week. Fetch that, then the
+  // following week by number, so a two-week window actually covers two weeks.
   const isFootball = league === 'NFL' || league === 'CFB';
   const dates = isFootball ? '' : (start ? (end && end !== start ? `${start}-${end}` : start) : '');
+  const base = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard`;
 
   try {
-    const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard${dates ? `?dates=${dates}&limit=400` : ''}`;
-    const r = await fetch(url);
+    const r = await fetch(dates ? `${base}?dates=${dates}&limit=400` : base);
     if (!r.ok) return res.status(200).json({ games: [], _status: r.status });
     const j = await r.json();
+    const events = [...(j.events || [])];
+    if (isFootball && j.week && j.week.number && j.season) {
+      try {
+        const nr = await fetch(`${base}?seasontype=${j.season.type}&week=${j.week.number + 1}&dates=${j.season.year}`);
+        if (nr.ok) {
+          const seen = new Set(events.map(e => e.id));
+          for (const e of ((await nr.json()).events || [])) if (!seen.has(e.id)) events.push(e);
+        }
+      } catch { /* the current week alone is still useful */ }
+    }
     const games = [];
-    for (const ev of (j.events || [])) {
+    for (const ev of events) {
       const comp = (ev.competitions || [])[0];
       if (!comp) continue;
       const cs = comp.competitors || [];
@@ -123,9 +134,12 @@ export default async function handler(req, res) {
       if (!H || !A) continue;
       const nm = c => c.team && (c.team.displayName || c.team.name);
       const ab = c => (c.team && c.team.abbreviation) || '';
+      const logo = c => (c.team && c.team.logo) || '';
       const st = (ev.status && ev.status.type) || {};
       const { dateKey, time } = ctParts(ev.date || comp.date || '');
       if (!dateKey) continue;
+      // Football ignores the requested window upstream, so trim to it here.
+      if (isFootball && start0 && (dateKey < start0 || dateKey > end0)) continue;
       let network = '';
       for (const b of (comp.broadcasts || [])) { if (Array.isArray(b.names) && b.names[0]) { network = b.names[0]; break; } }
       // Rate the game from records / AP rank / spread / TV / stakes so the whole
@@ -149,6 +163,7 @@ export default async function handler(req, res) {
       };
       games.push({
         league, home: nm(H), away: nm(A), homeAbbr: ab(H), awayAbbr: ab(A),
+        homeLogo: logo(H), awayLogo: logo(A),
         dateKey, time,
         state: st.state || 'pre',              // pre | in | post
         detail: st.shortDetail || '',          // "Scheduled" | "Final" | "45'" | "Top 5th"
