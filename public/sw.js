@@ -24,6 +24,8 @@ self.addEventListener("push", (event) => {
     icon: "/icon-192.png",
     badge: "/icon-192.png",
     data: { url: data.url || "/" },
+    // Same tag = replace, not stack (e.g. a re-sent playoff alert for the same day).
+    ...(data.tag ? { tag: data.tag } : {}),
   };
 
   event.waitUntil(self.registration.showNotification(title, options));

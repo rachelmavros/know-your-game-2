@@ -1,9 +1,26 @@
 {
   "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
   ],
   "crons": [
-    { "path": "/api/refresh-standings", "schedule": "0 12 * * *" },
-    { "path": "/api/notify", "schedule": "0 14 * * *" }
+    {
+      "path": "/api/refresh-standings",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/notify",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/notify?kind=big",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/notify?kind=week",
+      "schedule": "30 14 * * 1"
+    }
   ]
 }

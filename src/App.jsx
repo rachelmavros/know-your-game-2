@@ -2879,14 +2879,14 @@ async function subscribeToPush(prefs, stars) {
 }
 
 // Fire the personalized notification to this device on demand (test button).
-async function sendTestPush(prefs, stars) {
+async function sendTestPush(prefs, stars, kind = "daily") {
   const sub = await getPushSubscription();
   if (!sub) throw new Error("not-subscribed");
   await savePushSubscription(sub, prefs, stars); // sync latest prefs first
   const res = await fetch("/api/test-push", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ endpoint: sub.toJSON().endpoint }),
+    body: JSON.stringify({ endpoint: sub.toJSON().endpoint, kind }),
   });
   if (!res.ok) throw new Error(await res.text().catch(() => "test failed"));
   return res.json();
@@ -2924,10 +2924,10 @@ function PushCard({ prefs, stars }) {
     }
   };
 
-  const test = async () => {
+  const test = async kind => {
     setTestState("sending");
     try {
-      await sendTestPush(prefs, stars);
+      await sendTestPush(prefs, stars, kind);
       setTestState("sent");
       setTimeout(() => setTestState("idle"), 4000);
     } catch (e) {
@@ -2944,14 +2944,16 @@ function PushCard({ prefs, stars }) {
       {state === "on" && (
         <>
           <div style={{ fontSize: 12.5, color: C.inkMid, lineHeight: 1.55, marginBottom: 12 }}>
-            ✓ You're all set. Each morning you'll get a heads-up featuring your top game of the day — tap it to jump straight to that game. It's personalized to the teams and leagues you follow.
+            ✓ You're all set. Each morning you'll get a heads-up featuring your top game of the day, plus separate alerts for playoff and finals games (set them up below). Tap any alert to jump straight to that game.
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <button onClick={test} disabled={testState === "sending"} style={{
-              background: C.surface, color: C.red, border: `1px solid ${C.red}`,
-              borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 700,
-              cursor: testState === "sending" ? "default" : "pointer", fontFamily: "inherit",
-            }}>{testState === "sending" ? "Sending…" : "🔔 Send me a test notification"}</button>
+            {[["daily", "🔔 Test daily alert"], ["big", "🏆 Test playoff alert"]].map(([k, lbl]) => (
+              <button key={k} onClick={() => test(k)} disabled={testState === "sending"} style={{
+                background: C.surface, color: C.red, border: `1px solid ${C.red}`,
+                borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 700,
+                cursor: testState === "sending" ? "default" : "pointer", fontFamily: "inherit",
+              }}>{testState === "sending" ? "Sending…" : lbl}</button>
+            ))}
             {testState === "sent" && <span style={{ fontSize: 12, color: "#1F7A4D", fontWeight: 700 }}>Sent! Check your notifications.</span>}
             {testState === "error" && <span style={{ fontSize: 12, color: C.red, fontWeight: 700 }}>Couldn't send — try again.</span>}
           </div>
@@ -2988,18 +2990,68 @@ function PushCard({ prefs, stars }) {
   );
 }
 
+// Leagues the playoff/finals alerts can cover (matches BIG_LEAGUES in api/_push.js).
+const BIG_ALERT_LEAGUES = ["NFL", "NBA", "WNBA", "MLB", "NHL", "CFB", "MLS"];
+
 function AlertsTab({ prefs, onPrefChange, gameAlerts, calAlerts, stars }) {
   const rows = [
-    { key: "mustWatch", label: "Championship & finals games", desc: "Clinchers and elimination games across all sports." },
     { key: "myFeed",    label: "Big games in my followed teams", desc: "Worth-your-time games in your leagues and teams." },
     { key: "closeGame", label: "Close finishes — live now", desc: "When a live game is tied or within a score late." },
     { key: "morning",   label: "Morning-of reminders", desc: "A heads-up each morning you have a game alert." },
   ];
   const total = gameAlerts.length + calAlerts.length;
+  // Empty/missing list = every league.
+  const bigLeagues = Array.isArray(prefs.bigLeagues) && prefs.bigLeagues.length ? prefs.bigLeagues : BIG_ALERT_LEAGUES;
+  const toggleBigLeague = lg => {
+    const next = bigLeagues.includes(lg) ? bigLeagues.filter(x => x !== lg) : [...bigLeagues, lg];
+    onPrefChange("bigLeagues", next.length === BIG_ALERT_LEAGUES.length ? [] : next);
+  };
+  const playoffOn = prefs.mustWatch !== false || prefs.weeklyBig !== false;
+  const row = (r, extra) => (
+    <div key={r.key} style={{
+      display: "flex", alignItems: "center", gap: 14, padding: "15px 16px",
+      ...(extra || { background: C.surface, border: `1px solid ${C.line}`, borderRadius: 11, marginBottom: 8 }),
+    }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginBottom: 3 }}>{r.label}</div>
+        <div style={{ fontSize: 12, color: C.inkDim, lineHeight: 1.45 }}>{r.desc}</div>
+      </div>
+      <Toggle on={prefs[r.key] !== false} onChange={v => onPrefChange(r.key, v)} />
+    </div>
+  );
   return (
     <div>
       <InstallPrompt />
       <PushCard prefs={prefs} stars={stars} />
+
+      {/* Playoff & finals alerts — their own card, separate from the daily push */}
+      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", color: C.inkFaint, marginBottom: 12 }}>🏆 PLAYOFF & FINALS ALERTS</div>
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, marginBottom: 22, overflow: "hidden" }}>
+        {row({ key: "mustWatch", label: "Game-day playoff alerts", desc: "A separate alert at 10am CT on any day with playoff, finals or championship games — what's at stake, when, and where to watch." }, {})}
+        <div style={{ height: 1, background: C.lineSoft }} />
+        {row({ key: "weeklyBig", label: "This week's big games", desc: "Every Monday: the week's playoff and title games in one notification." }, {})}
+        <div style={{ height: 1, background: C.lineSoft }} />
+        <div style={{ padding: "14px 16px", opacity: playoffOn ? 1 : 0.45 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.inkMid, marginBottom: 10 }}>Sports to cover</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {BIG_ALERT_LEAGUES.map(lg => {
+              const on = bigLeagues.includes(lg);
+              const lc = LEAGUE_COLORS[lg] || C.ink;
+              return (
+                <button key={lg} disabled={!playoffOn} onClick={() => toggleBigLeague(lg)} style={{
+                  padding: "6px 12px", borderRadius: 16, cursor: playoffOn ? "pointer" : "default", fontFamily: "inherit",
+                  fontSize: 12, fontWeight: 700, background: on ? lc : C.surface, color: on ? "#fff" : C.inkDim,
+                  border: `1px solid ${on ? lc : C.line}`,
+                }}>{on ? "✓ " : ""}{SPORT_EMOJI[lg]} {leagueLabel(lg)}</button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11.5, color: C.inkFaint, lineHeight: 1.5, marginTop: 12 }}>
+            Example: <span style={{ color: C.inkMid, fontWeight: 600 }}>🏆 World Series · Game 6 tonight</span> — "Dodgers at Yankees · 7:08 PM CT on FOX. Yankees lead 3-2 — Yankees can clinch."
+          </div>
+        </div>
+      </div>
+
       <div style={{ background: C.redSoft, border: `1px solid ${C.red}`, borderRadius: 11, padding: "14px 16px", marginBottom: 22 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: C.red, marginBottom: 4 }}>
           {total} alert{total !== 1 ? "s" : ""} set
@@ -3009,18 +3061,7 @@ function AlertsTab({ prefs, onPrefChange, gameAlerts, calAlerts, stars }) {
         </div>
       </div>
       <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", color: C.inkFaint, marginBottom: 12 }}>NOTIFY ME WHEN</div>
-      {rows.map(r => (
-        <div key={r.key} style={{
-          display: "flex", alignItems: "center", gap: 14, background: C.surface,
-          border: `1px solid ${C.line}`, borderRadius: 11, padding: "15px 16px", marginBottom: 8,
-        }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginBottom: 3 }}>{r.label}</div>
-            <div style={{ fontSize: 12, color: C.inkDim, lineHeight: 1.45 }}>{r.desc}</div>
-          </div>
-          <Toggle on={prefs[r.key]} onChange={v => onPrefChange(r.key, v)} />
-        </div>
-      ))}
+      {rows.map(r => row(r))}
     </div>
   );
 }
@@ -3763,7 +3804,52 @@ const BIG_EVENTS = [
     note: "Six months of baseball come down to October. Short series, packed stadiums, and the sport at its most dramatic — even casual fans get pulled in." },
   { dateKey: "2026-10-20", league: "NBA", title: "NBA Opening Night", span: "Late October", where: "", tv: "TNT / ESPN",
     note: "The Knicks begin their title defense. Opening night is a double-header showcase of the league's biggest stars." },
+  { dateKey: "2026-12-15", league: "NBA", title: "NBA Cup Championship", span: "Mid-December", where: "Las Vegas", tv: "Prime Video",
+    note: "The in-season tournament's title game — a real trophy and real prize money, played in Las Vegas a few days before Christmas." },
+  { dateKey: "2027-01-25", league: "CFB", title: "College Football Playoff Championship", span: "Late January", where: "Allegiant Stadium, Las Vegas", tv: "ESPN",
+    note: "The last game of the college season — two teams left from the 12-team playoff, one national champion." },
+  { dateKey: "2027-02-14", league: "NFL", title: "Super Bowl LXI", span: "Sunday, February 14", where: "SoFi Stadium, Los Angeles", tv: "ABC / ESPN",
+    note: "The biggest TV event in America, on Valentine's Day this time. Come for the game, stay for the halftime show and the commercials." },
+  { dateKey: "2027-02-14", league: "NBA", title: "NBA All-Star Weekend", span: "Mid-February", where: "", tv: "",
+    note: "Dunk contest, three-point shootout and the All-Star Game — the league's stars showing off for a weekend." },
+
+  // Drafts — every league's yearly reset button.
+  { kind: "draft", dateKey: "2027-04-13", league: "WNBA", title: "WNBA Draft", span: "Mid-April", where: "New York", tv: "ESPN",
+    note: "College basketball's best go pro. The top picks are usually players you already watched in March Madness." },
+  { kind: "draft", dateKey: "2027-04-22", league: "NFL", title: "NFL Draft", span: "Late April · 3 days", where: "Washington, D.C.", tv: "ESPN / ABC / NFL Network",
+    note: "Three days, seven rounds, and hundreds of thousands of fans in person. Round 1 on Thursday night is the one everyone watches." },
+  { kind: "draft", dateKey: "2027-06-24", league: "NBA", title: "NBA Draft", span: "Late June · 2 nights", where: "Brooklyn, NY", tv: "ABC / ESPN",
+    note: "Only two rounds, so every pick matters — and draft night is when a lot of blockbuster trades happen too." },
+  { kind: "draft", dateKey: "2027-06-25", league: "NHL", title: "NHL Draft", span: "Late June", where: "", tv: "ESPN / Sportsnet",
+    note: "Mostly 18-year-olds, most of whom won't play in the NHL for a few years — but the No. 1 pick is often a franchise changer." },
+  { kind: "draft", dateKey: "2027-07-11", league: "MLB", title: "MLB Draft", span: "Mid-July · All-Star week", where: "", tv: "MLB Network",
+    note: "Held during All-Star week. Picks usually spend years in the minors, so it's a long game — but it's where future stars start." },
+
+  // Ticket on-sales — when to get in line. Exact dates vary by team, so these
+  // are the league-wide windows; the button links to the official ticket page.
+  { kind: "tickets", dateKey: "2027-01-26", league: "MLB", title: "MLB Single-Game Tickets", span: "Late January – February", where: "Team by team", tv: "",
+    note: "Most clubs put single-game tickets on sale in the weeks before spring training. Opening Day and rivalry games go first." },
+  { kind: "tickets", dateKey: "2027-03-16", league: "WNBA", title: "WNBA Single-Game Tickets", span: "Spring, after the schedule drops", where: "Team by team", tv: "",
+    note: "Demand has exploded — Fever, Liberty and Valkyries games sell out fast. Sign up for your team's presale to get a code." },
+  { kind: "tickets", dateKey: "2027-05-13", league: "NFL", title: "NFL Schedule Release + Tickets", span: "Mid-May", where: "Team by team", tv: "NFL Network",
+    note: "The full 2027 schedule comes out, and single-game tickets usually go on sale within days. Season-ticket waitlists are years long, so this is your shot." },
+  { kind: "tickets", dateKey: "2027-08-31", league: "NBA", title: "NBA Single-Game Tickets", span: "Late August – September", where: "Team by team", tv: "",
+    note: "Teams open single-game sales once the schedule is out. Opening night, Christmas Day and big-name visits sell out first." },
 ];
+
+// Official ticket hubs for the "Find tickets" button on ticket on-sale events.
+const TICKET_URL = {
+  NFL: "https://www.nfl.com/tickets/", NBA: "https://www.nba.com/tickets", MLB: "https://www.mlb.com/tickets",
+  WNBA: "https://www.wnba.com/tickets", NHL: "https://www.nhl.com/tickets", MLS: "https://www.mlssoccer.com/tickets/",
+  CFB: "https://collegefootballplayoff.com/tickets", EPL: "https://www.premierleague.com/tickets",
+};
+const EVENT_KINDS = [
+  { id: "ALL", label: "Everything" },
+  { id: "draft", label: "📋 Drafts" },
+  { id: "tickets", label: "🎟️ Tickets" },
+  { id: "event", label: "🏆 Big games" },
+];
+const eventKind = e => (e.kind === "draft" || e.kind === "tickets") ? e.kind : "event";
 
 function NewsTab() {
   const leagues = sortLeaguesByPriority(["WNBA", "NBA", "MLB", "NFL", "CFB", "WVB", "FIBA", "USO", "EPL", "NHL"]);
@@ -3866,6 +3952,7 @@ function EventsTab() {
   const today = todayKey();
   const [aiEvents, setAiEvents] = useState([]);
   const [filter, setFilter] = useState("ALL");
+  const [kind, setKind] = useState("ALL");
   useEffect(() => {
     let cancelled = false;
     fetch("/api/ai?action=events")
@@ -3887,8 +3974,9 @@ function EventsTab() {
     })
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
-  const leaguesPresent = sortLeaguesByPriority([...new Set(merged.map(e => e.league))]);
-  const upcoming = merged.filter(e => filter === "ALL" || e.league === filter);
+  const ofKind = merged.filter(e => kind === "ALL" || eventKind(e) === kind);
+  const leaguesPresent = sortLeaguesByPriority([...new Set(ofKind.map(e => e.league))]);
+  const upcoming = ofKind.filter(e => filter === "ALL" || e.league === filter);
 
   // Days until an event, for the countdown chip.
   const daysUntil = dk => {
@@ -3912,8 +4000,20 @@ function EventsTab() {
     <div>
       <div style={{ fontSize: 20, fontWeight: 900, color: C.ink, marginBottom: 6 }}>📅 Big Events Coming Up</div>
       <p style={{ fontSize: 13, color: C.inkDim, lineHeight: 1.55, marginBottom: 14 }}>
-        The marquee moments on the sports calendar — the ones people talk about even if they don't follow the games.
+        The marquee moments on the sports calendar — big games, drafts, and when tickets go on sale.
       </p>
+
+      {/* Event type */}
+      <div style={{ display: "flex", gap: 2, marginBottom: 12, background: C.lineSoft, borderRadius: 9, padding: 4, overflowX: "auto" }}>
+        {EVENT_KINDS.map(k => (
+          <button key={k.id} onClick={() => { setKind(k.id); setFilter("ALL"); }} style={{
+            flex: "1 0 auto", padding: "8px 9px", borderRadius: 6, border: "none", cursor: "pointer", whiteSpace: "nowrap",
+            background: kind === k.id ? C.surface : "transparent", color: kind === k.id ? C.ink : C.inkDim,
+            fontSize: 12, fontWeight: 700, fontFamily: "inherit",
+            boxShadow: kind === k.id ? "0 1px 4px rgba(20,32,43,0.1)" : "none",
+          }}>{k.label}</button>
+        ))}
+      </div>
 
       {/* League filter */}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 16, paddingBottom: 2 }}>
@@ -3933,7 +4033,8 @@ function EventsTab() {
 
       {upcoming.map((e, i) => {
         const lc = LEAGUE_COLORS[e.league] || C.red;
-        const isNext = i === 0 && filter === "ALL";
+        const isNext = i === 0 && filter === "ALL" && kind === "ALL";
+        const k = eventKind(e);
         return (
           <div key={`${e.title}-${e.dateKey}`} style={{
             background: isNext ? "#15202B" : C.surface,
@@ -3942,9 +4043,16 @@ function EventsTab() {
             color: isNext ? "#fff" : C.ink,
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-              {isNext
-                ? <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", color: "rgba(255,255,255,0.6)" }}>⭐ UP NEXT</span>
-                : <span />}
+              <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {isNext && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", color: "rgba(255,255,255,0.6)" }}>⭐ UP NEXT</span>}
+                {k !== "event" && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", padding: "3px 8px", borderRadius: 4,
+                    background: isNext ? "rgba(255,255,255,0.15)" : (k === "draft" ? "#EEF2FF" : "#FFF4E5"),
+                    color: isNext ? "#fff" : (k === "draft" ? "#3B4BB8" : "#B45309"),
+                  }}>{k === "draft" ? "📋 DRAFT" : "🎟️ TICKETS ON SALE"}</span>
+                )}
+              </span>
               <span style={{
                 fontSize: 11, fontWeight: 800, padding: "3px 9px", borderRadius: 20,
                 background: isNext ? "rgba(255,255,255,0.15)" : lc + "15",
@@ -3963,7 +4071,14 @@ function EventsTab() {
                 {e.note}
               </p>
             )}
-            {e.tv && (
+            {k === "tickets" && (
+              <a href={TICKET_URL[e.league] || `https://www.google.com/search?q=${encodeURIComponent(`${e.league} tickets`)}`} target="_blank" rel="noopener noreferrer" style={{
+                display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none",
+                background: isNext ? "rgba(255,255,255,0.15)" : lc, color: "#fff",
+                padding: "7px 13px", borderRadius: 7, fontSize: 12, fontWeight: 700,
+              }}>🎟️ Find tickets ↗</a>
+            )}
+            {e.tv && k !== "tickets" && (
               <a href={netUrl(e.tv) || `https://www.google.com/search?q=${encodeURIComponent(`watch ${e.tv} live`)}`} target="_blank" rel="noopener noreferrer" style={{
                 display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none",
                 background: isNext ? "rgba(255,255,255,0.15)" : lc, color: "#fff",
@@ -5632,7 +5747,8 @@ export default function App() {
   const [stars, setStars] = useState(() => load("kyg-stars-v5", { leagues: ["WNBA"], teams: [] }));
   const [gameAlerts, setGameAlerts] = useState(() => load("kyg-galerts-v3", []));
   const [calAlerts, setCalAlerts] = useState(() => load("kyg-calerts-v2", []));
-  const [prefs, setPrefs] = useState(() => load("kyg-prefs-v3", { mustWatch: true, myFeed: true, closeGame: false, morning: true }));
+  // Defaults merged under saved prefs so newly added settings start on for existing users.
+  const [prefs, setPrefs] = useState(() => ({ mustWatch: true, weeklyBig: true, myFeed: true, closeGame: false, morning: true, ...load("kyg-prefs-v3", {}) }));
   const [filters, setFilters] = useState({ sport: "ALL", team: "ALL", city: "ALL" });
   const [user, setUser] = useState(() => load("kyg-user", null));
   const [showLogin, setShowLogin] = useState(false);

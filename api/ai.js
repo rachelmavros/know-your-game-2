@@ -151,7 +151,7 @@ Respond ONLY as raw JSON: {"bullets":["...","..."]}. No markdown.`;
 }
 
 async function doEvents() {
-  const key = 'events-list-v2'; // v2 = includes EPL
+  const key = 'events-list-v3'; // v3 = drafts + ticket on-sales, 12-month horizon
   const FRESH_MS = 14 * 86400000;
   const c = await cacheGet(key);
   let stale = null;
@@ -160,19 +160,22 @@ async function doEvents() {
     stale = c.value;
   }
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-  const prompt = `Today is ${today}. List the 8-12 biggest upcoming sports events over roughly the next 6 months that a CASUAL fan would care about — drafts, All-Star games, trade/transfer deadlines, playoff starts, championships/finals, and season openers across WNBA, NBA, MLB, NFL, NHL, and the English Premier League (EPL) — include EPL opening weekend, big derbies, and the transfer deadline.
+  const prompt = `Today is ${today}. List the biggest upcoming sports events over the next 12 months that a CASUAL fan would care about, across WNBA, NBA, MLB, NFL, NHL, MLS, college football (CFB) and the English Premier League (EPL). Include three kinds:
+- "event": playoff starts, championships/finals, All-Star games, season openers, trade/transfer deadlines.
+- "draft": EVERY league's draft (NFL, NBA, WNBA, MLB, NHL, MLS SuperDraft) — always include all of them.
+- "tickets": when tickets go on sale — single-game ticket on-sales after schedule releases, playoff/finals ticket on-sales, Super Bowl/All-Star/championship ticket releases.
 
-Each object EXACTLY: {"dateKey":"YYYY-MM-DD" (today or later), "league":"WNBA|NBA|MLB|NFL|NHL|EPL", "title":"short name", "span":"human timing e.g. 'Late October'", "where":"venue or ''", "tv":"network or ''", "note":"one warm sentence on why a casual fan should care"}.
+Each object EXACTLY: {"kind":"event|draft|tickets", "dateKey":"YYYY-MM-DD" (today or later; best estimate if only the window is known), "league":"WNBA|NBA|MLB|NFL|NHL|MLS|CFB|EPL", "title":"short name", "span":"human timing e.g. 'Late April'", "where":"venue/city or ''", "tv":"network or ''", "note":"one warm sentence on why a casual fan should care"}.
 
-Only real, scheduled or clearly recurring events. Earliest first. Output ONLY a JSON array, no markdown.`;
-  const raw = await claude({ max_tokens: 2000, system: 'You output only a raw JSON array.', messages: [{ role: 'user', content: prompt }] });
+Return 18-28 items. Only real, scheduled or clearly recurring events. Earliest first. Output ONLY a JSON array, no markdown.`;
+  const raw = await claude({ max_tokens: 5000, system: 'You output only a raw JSON array.', messages: [{ role: 'user', content: prompt }] });
   let arr = raw && grabJSON(raw, '[', ']');
   if (!Array.isArray(arr)) return { events: stale || [] };
   arr = arr
     .filter(x => x && x.dateKey && x.title && x.league && x.dateKey >= today)
-    .map(x => ({ dateKey: String(x.dateKey), league: String(x.league).toUpperCase(), title: String(x.title), span: x.span || '', where: x.where || '', tv: x.tv || '', note: x.note || '' }))
+    .map(x => ({ kind: ['draft', 'tickets'].includes(x.kind) ? x.kind : 'event', dateKey: String(x.dateKey), league: String(x.league).toUpperCase(), title: String(x.title), span: x.span || '', where: x.where || '', tv: x.tv || '', note: x.note || '' }))
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey))
-    .slice(0, 14);
+    .slice(0, 30);
   if (!arr.length) return { events: stale || [] };
   cacheSet(key, arr);
   return { events: arr };
